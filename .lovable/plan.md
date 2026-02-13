@@ -1,100 +1,99 @@
 
-
-# Unified Interactive World - SpeakWorld
+# Vast 3D World using React Three Fiber
 
 ## Overview
-Replace the separate game pages with a single **2D top-down world map** where all players exist together. The 4 game activities become **zones** on the map that players walk into. Players see each other moving around in real-time via their pet blob avatars.
+Replace the current flat 2D CSS-based world with a full **3D environment** powered by React Three Fiber. The player character walks around a large, open grassy terrain with Roblox-style blocky buildings for each zone, trees, paths, clouds, and a third-person camera that follows the player. The world will feel expansive -- not confined to a single screen.
 
-## How It Works for Players
-1. After login, players enter the world and see a colorful illustrated map
-2. Their pet blob avatar appears and they move it by tapping/clicking or using arrow keys
-3. Other online players are visible as their own blob pets moving around
-4. Walking into a zone (Pet Garden, Obby Track, NPC Hut, Prop Hunt Plaza) opens that activity as an overlay
-5. Players can see who else is in each zone via small avatar indicators
-6. A chat bubble shows when someone speaks (speech recognition active world-wide)
+## What Changes
 
-## World Map Layout
+### New Dependencies
+- `three` (>=0.133)
+- `@react-three/fiber` (^8.18)
+- `@react-three/drei` (^9.122.0)
+
+### New / Rewritten Components
+
+**`WorldMap3D.tsx`** -- The 3D scene
+- A large green plane (200x200 units) as the ground with a grid texture
+- Sky/environment using drei's `Sky` component
+- 4 blocky buildings (box geometries with colored materials) placed far apart at zone positions
+- Decorative blocky trees (cylinder trunk + box leaves) scattered around
+- Dirt paths (thin brown planes) connecting the zones
+- A glowing spawn pad at the center
+- Zone labels using drei's `Html` component floating above each building
+
+**`PlayerCharacter3D.tsx`** -- The player in 3D
+- A simple blocky Roblox-style character made from box geometries (head, torso, legs, arms)
+- Colors derived from the player name hash (same logic as current)
+- Arm swing animation using useFrame
+- Name tag above the head using `Html`
+- Third-person camera follows behind this character using drei's camera controls
+
+**`GameWorld3D.tsx`** -- Replaces GameWorld.tsx logic
+- Wraps everything in a `<Canvas>` from R3F
+- Same WASD/arrow key movement but now moves a 3D position (x, z plane)
+- Click-to-move: raycasts onto the ground plane to get target position
+- Zone detection based on 3D distance to zone center points
+- Same Supabase Presence integration for multiplayer
+- Same ZonePrompt and ZoneOverlay (these stay as HTML overlays on top of the canvas)
+- World boundaries expanded: player can roam -100 to +100 on both axes
+
+**`OtherPlayer3D.tsx`** -- Other players rendered in the 3D scene
+- Same blocky character, positioned at their broadcast coordinates
+- Smoothly interpolated movement using lerp in useFrame
+
+### Kept As-Is (HTML overlays)
+- `ZonePrompt.tsx` -- still floats as an HTML overlay when near a zone
+- `ZoneOverlay.tsx` -- still opens as a modal overlay for activities
+- `World.tsx` -- just renders GameWorld3D instead of GameWorld
+
+### Camera
+- Third-person camera positioned behind and above the player (offset: 0, 8, 12)
+- Looks at the player position
+- Smooth follow using lerp each frame
+
+## Zone Layout (3D coordinates)
+- Spawn: (0, 0, 0) -- center
+- NPC Hut: (-30, 0, -30) -- far top-left
+- Prop Hunt: (30, 0, -30) -- far top-right
+- Pet Garden: (-30, 0, 30) -- far bottom-left
+- Obby Track: (30, 0, 30) -- far bottom-right
+
+Zones trigger when the player is within 12 units of a building center.
+
+## Movement
+- WASD/Arrows move at 0.3 units per frame on the XZ plane
+- Click on ground: raycast hit point becomes the target, player walks toward it
+- World bounds: -90 to 90 on both axes (large roaming area)
+- Character faces movement direction
+
+## Technical Details
 
 ```text
-+------------------------------------------+
-|              NPC Hut (top-left)           |
-|   [Wizard]          Prop Hunt Plaza       |
-|                     (top-right) [Objects] |
-|                                           |
-|            [ Spawn / Center ]             |
-|            Players appear here            |
-|                                           |
-|   Pet Garden        Obby Track            |
-|   (bottom-left)     (bottom-right)        |
-|   [Flowers]         [Platforms]           |
-+------------------------------------------+
+Canvas (full screen)
+  |-- ambientLight + directionalLight
+  |-- Sky (drei)
+  |-- Ground plane (200x200, green)
+  |-- Grid overlay (subtle lines)
+  |-- Zone buildings (4x BoxGeometry groups)
+  |-- Trees (scattered CylinderGeometry + BoxGeometry)
+  |-- Paths (thin planes connecting zones)
+  |-- Spawn pad (glowing plane at center)
+  |-- PlayerCharacter3D (current player, camera follows)
+  |-- OtherPlayer3D[] (multiplayer avatars)
+  |-- Html labels (zone names, player names)
+
+HTML Overlay (on top of Canvas)
+  |-- ZonePrompt
+  |-- ZoneOverlay
+  |-- Controls HUD
 ```
 
-## Technical Plan
-
-### 1. Database: Real-time player positions
-- Create a `player_positions` table with `profile_id`, `x`, `y`, `current_zone`, `is_online`
-- Enable Supabase Realtime on this table so all players see each other
-- RLS: anyone authenticated can read all positions, but only update their own
-
-### 2. New Components
-
-**GameWorld.tsx** - The main world container
-- Renders a full-screen 2D map using absolute-positioned divs (not canvas, for simplicity)
-- Colorful illustrated background with 4 distinct zone areas
-- Handles keyboard (WASD/arrows) and touch/click movement
-- Subscribes to Supabase Realtime for other players' positions
-- Updates own position to the database on movement
-
-**PlayerAvatar.tsx** - Each player on the map
-- Renders a small BlobPet at the player's (x, y) position
-- Shows the player's name below
-- Speech bubble when they're talking
-- Smooth movement animation via framer-motion
-
-**ZoneOverlay.tsx** - Activity overlay when entering a zone
-- When player walks into a zone boundary, shows a "Enter [Zone]?" prompt
-- On confirm, opens the activity UI as a modal/overlay (not a page navigation)
-- The existing Pet, Obby, NPC, PropHunt logic runs inside the overlay
-- Close button to return to the world
-
-**WorldMap.tsx** - The background map
-- SVG or div-based illustrated background
-- 4 colored regions with labels and icons
-- Decorative elements (trees, flowers, paths)
-
-### 3. Refactored Activity Components
-- Extract Pet, Obby, NPC, PropHunt logic into reusable components (not full pages)
-- They render inside ZoneOverlay rather than as standalone routes
-- Keep the existing pages as redirects to the world for backward compatibility
-
-### 4. Real-time Multiplayer
-- Use Supabase Realtime Presence channel for lightweight position sync
-- Broadcast player position every 200ms while moving (throttled)
-- Show up to 20 nearest players on screen
-- Player list panel showing who's online and in which zone
-
-### 5. Routing Changes
-- `/world` becomes the main game route (replaces individual game pages)
-- `/pet`, `/obby`, `/npc`, `/prop-hunt` redirect to `/world` with a query param to auto-enter that zone
-- Home page portal buttons navigate to `/world?zone=pet` etc.
-
-### 6. Edge Function Update
-- Update `pet-chat` to also work in the world context (no changes needed, already standalone)
-- Add a `world-chat` edge function for general world chat between players using AI moderation
-
-### 7. Implementation Order
-1. Database migration for `player_positions` table + Realtime
-2. `WorldMap.tsx` - static illustrated background with zones
-3. `PlayerAvatar.tsx` - movable player blob
-4. `GameWorld.tsx` - movement controls, zone detection, position sync
-5. `ZoneOverlay.tsx` - activity overlay system
-6. Refactor Pet activity into overlay-compatible component
-7. Stub the other 3 zones (Obby, NPC, PropHunt) with placeholder content
-8. Real-time multiplayer: Presence channel for seeing other players
-9. Route updates and home page navigation changes
-
-## What Gets Built Now vs Later
-- **Now**: The world map, player movement, zone entry system, Pet zone working inside the world, real-time player visibility
-- **Later**: Full Obby gameplay, NPC conversation, Prop Hunt multiplayer mechanics (these remain as "coming soon" inside their zones)
-
+## Implementation Steps
+1. Install `three`, `@react-three/fiber@^8.18`, `@react-three/drei@^9.122.0`
+2. Create `WorldMap3D.tsx` with ground, sky, buildings, trees, paths
+3. Create `PlayerCharacter3D.tsx` with blocky character + camera follow
+4. Create `OtherPlayer3D.tsx` for multiplayer avatars
+5. Create `GameWorld3D.tsx` combining everything with movement, zone detection, presence sync
+6. Update `World.tsx` to use `GameWorld3D`
+7. Keep ZonePrompt and ZoneOverlay as HTML overlays
