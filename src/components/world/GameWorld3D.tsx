@@ -187,30 +187,23 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
     return () => clearInterval(interval);
   }, []);
 
-  // Refs for V-key handler to avoid effect churn
-  const isListeningRef = useRef(isListening);
-  const nearChestRef = useRef(nearChest);
-  const activeZoneRef = useRef(activeZone);
-  const startListeningRef = useRef(startListening);
-  const stopListeningRef2 = useRef(stopListening);
-  isListeningRef.current = isListening;
-  nearChestRef.current = nearChest;
-  activeZoneRef.current = activeZone;
-  startListeningRef.current = startListening;
-  stopListeningRef2.current = stopListening;
+  // V key hold-to-talk — all deps via refs for zero effect churn
+  const startRef = useRef(startListening);
+  const stopRef = useRef(stopListening);
+  startRef.current = startListening;
+  stopRef.current = stopListening;
 
-  // V key hold for voice — stable effect, no re-runs
   useEffect(() => {
+    let vHeld = false;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.repeat) return;
-      if (e.key.toLowerCase() === "v" && !activeZoneRef.current && nearChestRef.current && !isListeningRef.current) {
-        startListeningRef.current();
-      }
+      if (e.key.toLowerCase() !== "v" || e.repeat || vHeld) return;
+      vHeld = true;
+      startRef.current();
     };
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "v" && isListeningRef.current) {
-        stopListeningRef2.current();
-      }
+      if (e.key.toLowerCase() !== "v") return;
+      vHeld = false;
+      stopRef.current();
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);

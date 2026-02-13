@@ -20,7 +20,7 @@ export function useSpeechRecognition({
   const recognitionRef = useRef<SpeechRecognitionInstance>(null);
   const onResultRef = useRef(onResult);
   const onErrorRef = useRef(onError);
-  const shouldBeListening = useRef(false);
+  const wantActive = useRef(false);
 
   onResultRef.current = onResult;
   onErrorRef.current = onError;
@@ -61,51 +61,51 @@ export function useSpeechRecognition({
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      if (event.error !== "aborted" && event.error !== "no-speech") {
-        onErrorRef.current?.(event.error);
-        shouldBeListening.current = false;
-        setIsListening(false);
-      }
+      // Ignore transient errors that happen during normal operation
+      if (event.error === "aborted" || event.error === "no-speech") return;
+      onErrorRef.current?.(event.error);
+      wantActive.current = false;
+      setIsListening(false);
     };
 
     recognition.onend = () => {
-      // Restart if caller still wants us listening (hold-to-talk)
-      if (shouldBeListening.current) {
+      // Auto-restart if caller still wants us active (hold-to-talk)
+      if (wantActive.current) {
         try {
           recognition.start();
+          return;
         } catch {
-          shouldBeListening.current = false;
-          setIsListening(false);
+          // fall through to stop
         }
-        return;
       }
+      wantActive.current = false;
       setIsListening(false);
     };
 
     recognitionRef.current = recognition;
 
     return () => {
-      shouldBeListening.current = false;
+      wantActive.current = false;
       recognition.abort();
     };
   }, [lang]);
 
   const stopListening = useCallback(() => {
-    shouldBeListening.current = false;
-    if (!recognitionRef.current) return;
-    recognitionRef.current.stop();
+    wantActive.current = false;
+    recognitionRef.current?.stop();
     setIsListening(false);
   }, []);
 
   const startListening = useCallback(() => {
-    if (!recognitionRef.current) return;
+    if (!recognitionRef.current || wantActive.current) return;
     setTranscript("");
-    shouldBeListening.current = true;
+    wantActive.current = true;
     try {
       recognitionRef.current.start();
       setIsListening(true);
     } catch {
-      // Already started
+      // Already started — that's fine, just mark active
+      setIsListening(true);
     }
   }, []);
 
