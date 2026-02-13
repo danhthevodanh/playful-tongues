@@ -23,6 +23,7 @@ export function useSpeechRecognition({
   const onResultRef = useRef(onResult);
   const onErrorRef = useRef(onError);
   const autoStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shouldBeListening = useRef(false);
 
   onResultRef.current = onResult;
   onErrorRef.current = onError;
@@ -63,7 +64,6 @@ export function useSpeechRecognition({
       const current = finalTranscript || interimTranscript;
       setTranscript(current);
 
-      // Fire callback for both interim and final so keywords are caught immediately
       if (current) {
         const words = current.trim().split(/\s+/).filter(Boolean);
         onResultRef.current?.(current.trim(), words.length);
@@ -71,25 +71,39 @@ export function useSpeechRecognition({
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      if (event.error !== "aborted") {
+      if (event.error !== "aborted" && event.error !== "no-speech") {
         onErrorRef.current?.(event.error);
+        shouldBeListening.current = false;
+        setIsListening(false);
       }
-      setIsListening(false);
     };
 
     recognition.onend = () => {
+      // Browser can fire onend even with continuous=true.
+      // If we still want to be listening, restart immediately.
+      if (shouldBeListening.current) {
+        try {
+          recognition.start();
+        } catch {
+          shouldBeListening.current = false;
+          setIsListening(false);
+        }
+        return;
+      }
       setIsListening(false);
     };
 
     recognitionRef.current = recognition;
 
     return () => {
+      shouldBeListening.current = false;
       recognition.abort();
     };
   }, [lang]);
 
   const stopListening = useCallback(() => {
     clearAutoStop();
+    shouldBeListening.current = false;
     if (!recognitionRef.current) return;
     recognitionRef.current.stop();
     setIsListening(false);
@@ -99,17 +113,21 @@ export function useSpeechRecognition({
     if (!recognitionRef.current) return;
     setTranscript("");
     clearAutoStop();
+    shouldBeListening.current = true;
     try {
       recognitionRef.current.start();
       setIsListening(true);
-      // Auto-stop after timeout
       autoStopTimer.current = setTimeout(() => {
-        stopListening();
+        shouldBeListening.current = false;
+        if (recognitionRef.current) {
+          recognitionRef.current.stop();
+        }
+        setIsListening(false);
       }, autoStopMs);
     } catch {
       // Already started
     }
-  }, [clearAutoStop, stopListening, autoStopMs]);
+  }, [clearAutoStop, autoStopMs]);
 
   return { isListening, transcript, isSupported, startListening, stopListening };
 }
