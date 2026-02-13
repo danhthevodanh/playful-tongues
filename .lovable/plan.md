@@ -1,99 +1,96 @@
 
-# Vast 3D World using React Three Fiber
+# Prop Hunt: Voice-Activated Chest Breaking Mechanic
 
 ## Overview
-Replace the current flat 2D CSS-based world with a full **3D environment** powered by React Three Fiber. The player character walks around a large, open grassy terrain with Roblox-style blocky buildings for each zone, trees, paths, clouds, and a third-person camera that follows the player. The world will feel expansive -- not confined to a single screen.
+Replace the Prop Hunt building/zone with an in-world chest spawning system. Chests appear randomly across the 3D world. When a player walks near a chest, they can activate their microphone and shout **"Break!"** to smash it open, earning coins and XP. This is a live mechanic in the world -- not a separate overlay screen.
 
 ## What Changes
 
-### New Dependencies
-- `three` (>=0.133)
-- `@react-three/fiber` (^8.18)
-- `@react-three/drei` (^9.122.0)
+### Remove Prop Hunt as a Zone Building
+- Remove the `prop-hunt` entry from `ZONE_BUILDINGS` in `WorldMap3D.tsx` so there's no building to walk into
+- Remove the `prop-hunt` case from `ZoneOverlay.tsx`
 
-### New / Rewritten Components
+### New Component: `Chest3D.tsx`
+A 3D treasure chest rendered in the world scene:
+- Blocky chest model (box body + trapezoid lid) with a golden/brown color scheme
+- Floating sparkle particles or a subtle glow to attract attention
+- A bounce/hover animation (gentle up-down float using `useFrame`)
+- When the player is within range (~6 units), show a label via `Html`: "Shout BREAK!"
+- Breaking animation: chest shakes, opens, then fades out with coin/XP particle burst
+- Each chest has an `id`, `position`, and `broken` state
 
-**`WorldMap3D.tsx`** -- The 3D scene
-- A large green plane (200x200 units) as the ground with a grid texture
-- Sky/environment using drei's `Sky` component
-- 4 blocky buildings (box geometries with colored materials) placed far apart at zone positions
-- Decorative blocky trees (cylinder trunk + box leaves) scattered around
-- Dirt paths (thin brown planes) connecting the zones
-- A glowing spawn pad at the center
-- Zone labels using drei's `Html` component floating above each building
+### New Component: `ChestManager.tsx` (R3F component inside Canvas)
+Manages chest spawning and breaking logic:
+- Spawns 5-8 chests at random positions across the world (avoiding zone building areas and trees)
+- Tracks which chests are broken via local state
+- Every 30 seconds, respawns broken chests at new random positions
+- Exposes a callback `onChestBreak(chestId)` that awards coins + XP
 
-**`PlayerCharacter3D.tsx`** -- The player in 3D
-- A simple blocky Roblox-style character made from box geometries (head, torso, legs, arms)
-- Colors derived from the player name hash (same logic as current)
-- Arm swing animation using useFrame
-- Name tag above the head using `Html`
-- Third-person camera follows behind this character using drei's camera controls
+### Voice Integration
+- Use the existing `useSpeechRecognition` hook
+- When the player is near a chest (within 6 units), a microphone button appears in the HUD
+- Player taps the mic button (or presses `V` key) to start listening
+- If the recognized speech contains **"break"** (case-insensitive), the nearest chest breaks
+- Show a speech bubble above the player briefly with what they said
 
-**`GameWorld3D.tsx`** -- Replaces GameWorld.tsx logic
-- Wraps everything in a `<Canvas>` from R3F
-- Same WASD/arrow key movement but now moves a 3D position (x, z plane)
-- Click-to-move: raycasts onto the ground plane to get target position
-- Zone detection based on 3D distance to zone center points
-- Same Supabase Presence integration for multiplayer
-- Same ZonePrompt and ZoneOverlay (these stay as HTML overlays on top of the canvas)
-- World boundaries expanded: player can roam -100 to +100 on both axes
+### Rewards HUD
+- A small overlay in the top-right corner showing current session coins and XP
+- When a chest breaks: animate "+10 Coins" and "+25 XP" floating text
+- Coins and XP are stored in `game_progress` table with `game_mode = 'prop-hunt'`
+- Update score (coins) in the database on each break
 
-**`OtherPlayer3D.tsx`** -- Other players rendered in the 3D scene
-- Same blocky character, positioned at their broadcast coordinates
-- Smoothly interpolated movement using lerp in useFrame
+### Updated HUD Controls
+- Add mic/voice hint to the controls bar: `V` or Mic icon for voice
+- Show "Shout BREAK near chests!" hint
 
-### Kept As-Is (HTML overlays)
-- `ZonePrompt.tsx` -- still floats as an HTML overlay when near a zone
-- `ZoneOverlay.tsx` -- still opens as a modal overlay for activities
-- `World.tsx` -- just renders GameWorld3D instead of GameWorld
+## Files to Create / Edit
 
-### Camera
-- Third-person camera positioned behind and above the player (offset: 0, 8, 12)
-- Looks at the player position
-- Smooth follow using lerp each frame
+### New Files
+1. **`src/components/world/Chest3D.tsx`** -- The 3D chest model + break animation
+2. **`src/components/world/ChestManager.tsx`** -- Spawning logic, proximity detection, voice integration (runs inside Canvas via `useFrame` for proximity, but triggers HTML overlay for mic)
 
-## Zone Layout (3D coordinates)
-- Spawn: (0, 0, 0) -- center
-- NPC Hut: (-30, 0, -30) -- far top-left
-- Prop Hunt: (30, 0, -30) -- far top-right
-- Pet Garden: (-30, 0, 30) -- far bottom-left
-- Obby Track: (30, 0, 30) -- far bottom-right
-
-Zones trigger when the player is within 12 units of a building center.
-
-## Movement
-- WASD/Arrows move at 0.3 units per frame on the XZ plane
-- Click on ground: raycast hit point becomes the target, player walks toward it
-- World bounds: -90 to 90 on both axes (large roaming area)
-- Character faces movement direction
+### Modified Files
+3. **`src/components/world/WorldMap3D.tsx`** -- Remove `prop-hunt` from `ZONE_BUILDINGS`
+4. **`src/components/world/ZoneOverlay.tsx`** -- Remove `prop-hunt` case
+5. **`src/components/world/GameWorld3D.tsx`** -- Add `ChestManager` inside Canvas, add rewards HUD overlay, add `V` key binding for voice, pass `movementState.pos` to chest proximity detection
 
 ## Technical Details
 
-```text
-Canvas (full screen)
-  |-- ambientLight + directionalLight
-  |-- Sky (drei)
-  |-- Ground plane (200x200, green)
-  |-- Grid overlay (subtle lines)
-  |-- Zone buildings (4x BoxGeometry groups)
-  |-- Trees (scattered CylinderGeometry + BoxGeometry)
-  |-- Paths (thin planes connecting zones)
-  |-- Spawn pad (glowing plane at center)
-  |-- PlayerCharacter3D (current player, camera follows)
-  |-- OtherPlayer3D[] (multiplayer avatars)
-  |-- Html labels (zone names, player names)
+### Chest Spawning Logic
+- Generate random positions: x in [-70, 70], z in [-70, 70]
+- Filter out positions too close to zone buildings (within 15 units) or spawn (within 10 units)
+- Each chest gets a unique ID (`chest-0`, `chest-1`, etc.)
 
-HTML Overlay (on top of Canvas)
-  |-- ZonePrompt
-  |-- ZoneOverlay
-  |-- Controls HUD
+### Proximity Detection
+- Inside `useFrame`, check distance from `movementState.pos` to each active chest
+- If any chest is within 6 units, set `nearestChest` state
+- This drives the "Shout BREAK!" prompt in the HUD
+
+### Voice Breaking Flow
+```text
+Player walks near chest
+  -> HUD shows "Shout BREAK!" + mic button
+  -> Player presses V or taps mic
+  -> Speech recognition starts
+  -> Player says "Break!"
+  -> Transcript matched -> chest breaks
+  -> Break animation plays (shake + particles)
+  -> Chest removed, rewards shown
+  -> Score saved to game_progress
 ```
 
+### Rewards
+- Each chest gives: 10 coins (added to `score`) and 25 XP
+- Saved to `game_progress` with `game_mode = 'prop-hunt'` and `profile_id`
+- Upsert pattern: if row exists, increment score; otherwise insert new row
+
+### Database
+- No new tables needed -- reuse `game_progress` with `game_mode = 'prop-hunt'`
+- Score field tracks total coins earned
+
 ## Implementation Steps
-1. Install `three`, `@react-three/fiber@^8.18`, `@react-three/drei@^9.122.0`
-2. Create `WorldMap3D.tsx` with ground, sky, buildings, trees, paths
-3. Create `PlayerCharacter3D.tsx` with blocky character + camera follow
-4. Create `OtherPlayer3D.tsx` for multiplayer avatars
-5. Create `GameWorld3D.tsx` combining everything with movement, zone detection, presence sync
-6. Update `World.tsx` to use `GameWorld3D`
-7. Keep ZonePrompt and ZoneOverlay as HTML overlays
+1. Remove `prop-hunt` from `ZONE_BUILDINGS` and `ZoneOverlay`
+2. Create `Chest3D.tsx` with the 3D chest model and break animation
+3. Create `ChestManager.tsx` with spawning, proximity, and voice logic
+4. Update `GameWorld3D.tsx` to integrate chests, rewards HUD, and voice key binding
+5. Wire up `game_progress` upsert for saving coins/XP
