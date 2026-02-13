@@ -187,17 +187,29 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
     return () => clearInterval(interval);
   }, []);
 
-  // V key hold for voice
+  // Refs for V-key handler to avoid effect churn
+  const isListeningRef = useRef(isListening);
+  const nearChestRef = useRef(nearChest);
+  const activeZoneRef = useRef(activeZone);
+  const startListeningRef = useRef(startListening);
+  const stopListeningRef2 = useRef(stopListening);
+  isListeningRef.current = isListening;
+  nearChestRef.current = nearChest;
+  activeZoneRef.current = activeZone;
+  startListeningRef.current = startListening;
+  stopListeningRef2.current = stopListening;
+
+  // V key hold for voice — stable effect, no re-runs
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat) return;
-      if (e.key.toLowerCase() === "v" && !activeZone && nearChest && !isListening) {
-        startListening();
+      if (e.key.toLowerCase() === "v" && !activeZoneRef.current && nearChestRef.current && !isListeningRef.current) {
+        startListeningRef.current();
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "v" && isListening) {
-        stopListening();
+      if (e.key.toLowerCase() === "v" && isListeningRef.current) {
+        stopListeningRef2.current();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -206,7 +218,7 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [isListening, nearChest, activeZone, startListening, stopListening]);
+  }, []);
 
   const handleChestBreak = useCallback(() => {
     const coins = 10;
