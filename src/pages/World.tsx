@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { GameWorld } from "@/components/world/GameWorld";
+import { GameWorld3D } from "@/components/world/GameWorld3D";
 import { motion } from "framer-motion";
 
 export default function World() {
@@ -33,5 +33,5 @@ export default function World() {
     );
   }
 
-  return <GameWorld profileId={profile.id} playerName={profile.name} />;
+  return <GameWorld3D profileId={profile.id} playerName={profile.name} />;
 }
