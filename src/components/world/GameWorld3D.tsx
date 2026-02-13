@@ -168,13 +168,16 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
   const popupCounter = useRef(0);
 
   // Voice
+  const stopListeningRef = useRef<() => void>(() => {});
   const { isListening, transcript, isSupported, startListening, stopListening } = useSpeechRecognition({
     onResult: (text) => {
       if (text.toLowerCase().includes("break") && chestProximityState.nearestChestId) {
         window.dispatchEvent(new Event("chest-break"));
+        stopListeningRef.current();
       }
     },
   });
+  stopListeningRef.current = stopListening;
 
   // Poll chest proximity for HUD
   useEffect(() => {
