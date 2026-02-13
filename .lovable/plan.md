@@ -1,46 +1,65 @@
 
 
-# Fix Voice-Activated Chest Breaking
+# Fix Movement Glitching, Voice Duration, and Speech Detection
 
-## Problems Identified
+## 3 Issues Found
 
-### 1. Stale Closure in `useSpeechRecognition`
-The `onResult` and `onError` callbacks are dependencies of the `useEffect` that creates the `SpeechRecognition` instance (line 68). Every time `GameWorld3D` re-renders, new callback references are created, causing the effect to re-run -- which **aborts and recreates** the recognition instance. This means if recognition is active and React re-renders, the instance gets destroyed mid-listen.
+### Issue 1: Movement Glitching
+**Cause**: `ChestManager`'s `useFrame` calls `setNearestId(closest)` every single frame (60fps), triggering React re-renders constantly. This causes the entire component tree to re-render, which interferes with smooth movement rendering.
 
-### 2. `onResult` callback recreated every render
-In `GameWorld3D.tsx`, the `useSpeechRecognition` hook receives an inline `onResult` that captures `chestProximityState.nearestChestId`. This object reference changes on every render, triggering the destructive re-creation cycle described above.
+**Fix** (`ChestManager.tsx`): Only call `setNearestId` when the value actually changes. Compare against the ref before setting state.
 
-### 3. `nearestId` stale in event listener
-In `ChestManager.tsx`, the `chest-break` event listener (line 98-106) depends on `nearestId` state, but `nearestId` is set via `setNearestId` inside `useFrame` which calls setState every frame. This can cause timing issues where the event fires before React has flushed the state update.
+### Issue 2: "Listening" Turns Off Too Quickly
+**Cause**: `SpeechRecognition` is configured with `continuous = false` (line 32 of `useSpeechRecognition.ts`). The browser's speech recognition automatically stops after detecting a short pause in speech, often within 1-2 seconds. The `onend` callback fires and sets `isListening = false`, hiding the UI.
 
-## Solution
+**Fix** (`useSpeechRecognition.ts`): 
+- Set `continuous = true` so recognition keeps listening
+- Add an auto-stop timeout (5 seconds) that starts when `startListening` is called
+- Clear the timeout if `stopListening` is called manually or on a successful result
 
-### Fix `useSpeechRecognition.ts`
-- Store `onResult` and `onError` in refs so the `useEffect` only runs once (on mount)
-- Remove `onResult` and `onError` from the `useEffect` dependency array
-- This prevents the recognition instance from being destroyed on re-renders
+### Issue 3: Saying "Break" Does Nothing
+**Cause**: The `onResult` callback checks `chestProximityState.nearestChestId`, but the `chest-break` event handler in `ChestManager` has a stale `breakingId` closure (the effect depends on `[breakingId]`). Also, with `continuous = false`, recognition may end before processing the final transcript. Additionally, the interim results should also be checked for the "break" keyword, not just the final transcript.
 
-### Fix `ChestManager.tsx`
-- Use a ref for `nearestId` alongside the state, so the `chest-break` event handler always reads the latest value without depending on React state timing
+**Fix**:
+- In `useSpeechRecognition.ts`: Also trigger `onResult` on interim transcripts that contain the keyword (or better, trigger the callback for both interim and final)
+- In `ChestManager.tsx`: Use a ref for `breakingId` too, so the event handler never has stale state
+- In `GameWorld3D.tsx`: Also check interim transcript in the `onResult` handler -- actually, better to add a separate `onInterim` callback or check transcript in the existing flow
 
-### Fix `GameWorld3D.tsx`
-- No changes needed -- the root cause is in the hook and manager
+**Simplified approach**: Check for "break" in both interim and final results within the speech hook, and use a ref for `breakingId` in ChestManager.
+
+## Files to Edit
+
+### 1. `src/components/world/ChestManager.tsx`
+- Only call `setNearestId()` when value changes (fix movement glitch from constant re-renders)
+- Use a `breakingIdRef` alongside state so the event handler is never stale
+
+### 2. `src/hooks/useSpeechRecognition.ts`
+- Set `continuous = true`
+- Add a 5-second auto-stop timer started in `startListening`, cleared in `stopListening`
+- Fire `onResult` for interim transcripts too (so "break" is caught immediately, even before the browser finalizes)
+
+### 3. `src/components/world/GameWorld3D.tsx`
+- No structural changes needed -- the `onResult` callback already checks for "break". The fixes in the hook and manager will make it work.
 
 ## Technical Details
 
-### `useSpeechRecognition.ts` changes
-- Add `onResultRef` and `onErrorRef` using `useRef`
-- Update refs on each render (outside useEffect)
-- In the `useEffect`, reference `onResultRef.current` and `onErrorRef.current` instead of the raw callbacks
-- Change the dependency array to `[lang]` only
+### ChestManager setState throttling
+```
+// In useFrame, only update React state when value changes:
+if (closest !== nearestIdRef.current) {
+  nearestIdRef.current = closest;
+  setNearestId(closest);
+}
+chestProximityState.nearestChestId = closest; // always update shared state
+```
 
-### `ChestManager.tsx` changes
-- Add `nearestIdRef = useRef(null)` 
-- Update the ref in `useFrame` alongside `setNearestId`
-- In the `chest-break` event handler, read from `nearestIdRef.current` instead of `nearestId` state
-- This eliminates the stale closure and removes `nearestId` from the effect dependencies
+### Speech Recognition continuous + auto-timeout
+```
+recognition.continuous = true;  // keep listening
+// In startListening: set a 5s timeout that calls stopListening
+// In stopListening / onResult with "break": clear the timeout
+```
 
-## Files to Edit
-1. `src/hooks/useSpeechRecognition.ts` -- stabilize recognition instance lifecycle
-2. `src/components/world/ChestManager.tsx` -- fix stale ref in event handler
+### Interim transcript matching
+In the `onresult` handler, call `onResultRef.current` with interim text too, so "break" is caught the moment it's partially recognized -- not just after the browser finalizes. Use a flag or separate callback to differentiate.
 
