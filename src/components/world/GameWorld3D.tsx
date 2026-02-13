@@ -187,19 +187,25 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
     return () => clearInterval(interval);
   }, []);
 
-  // V key for voice
+  // V key hold for voice
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "v" && !activeZone) {
-        if (isListening) {
-          stopListening();
-        } else if (nearChest) {
-          startListening();
-        }
+      if (e.repeat) return;
+      if (e.key.toLowerCase() === "v" && !activeZone && nearChest && !isListening) {
+        startListening();
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === "v" && isListening) {
+        stopListening();
       }
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
   }, [isListening, nearChest, activeZone, startListening, stopListening]);
 
   const handleChestBreak = useCallback(() => {
@@ -375,7 +381,7 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
             }`}
           >
             {isListening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-            {isListening ? `Listening... ${transcript || ""}` : 'Press V or Tap — Shout "BREAK!"'}
+            {isListening ? `Listening... ${transcript || ""}` : 'Hold V or Hold Tap — Shout "BREAK!"'}
           </button>
         </div>
       )}
