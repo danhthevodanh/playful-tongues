@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Canvas, useThree, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { supabase } from "@/integrations/supabase/client";
 import { WorldMap3D, ZONE_BUILDINGS } from "./WorldMap3D";
@@ -9,7 +9,7 @@ import { OtherPlayer3D } from "./OtherPlayer3D";
 import { ZonePrompt } from "./ZonePrompt";
 import { ZoneOverlay } from "./ZoneOverlay";
 
-const MOVE_SPEED = 0.3;
+const MOVE_SPEED = 15; // units per second
 const ZONE_TRIGGER_DIST = 12;
 const WORLD_BOUND = 90;
 
@@ -32,43 +32,129 @@ function getZoneAt(x: number, z: number) {
   return null;
 }
 
-// Ground click handler component inside Canvas
-function GroundClickHandler({ onClickGround }: { onClickGround: (point: THREE.Vector3) => void }) {
-  const { raycaster, camera, gl } = useThree();
+// Shared movement state — lives outside React render cycle
+const movementState = {
+  keys: new Set<string>(),
+  pos: new THREE.Vector3(0, 0, 0),
+  target: null as THREE.Vector3 | null,
+  rotation: 0,
+  moving: false,
+  activeZone: null as string | null,
+};
+
+function PlayerController({ playerName, onPositionChange }: { playerName: string; onPositionChange: (x: number, z: number) => void }) {
+  const lastBroadcast = useRef(0);
+
+  useFrame((_, delta) => {
+    if (movementState.activeZone) {
+      movementState.moving = false;
+      return;
+    }
+
+    const keys = movementState.keys;
+    let dx = 0, dz = 0;
+
+    if (keys.has("w") || keys.has("arrowup")) dz -= 1;
+    if (keys.has("s") || keys.has("arrowdown")) dz += 1;
+    if (keys.has("a") || keys.has("arrowleft")) dx -= 1;
+    if (keys.has("d") || keys.has("arrowright")) dx += 1;
+
+    // Normalize diagonal
+    if (dx !== 0 && dz !== 0) {
+      const len = Math.sqrt(dx * dx + dz * dz);
+      dx /= len;
+      dz /= len;
+    }
+
+    // Click-to-move fallback
+    if (dx === 0 && dz === 0 && movementState.target) {
+      const tdx = movementState.target.x - movementState.pos.x;
+      const tdz = movementState.target.z - movementState.pos.z;
+      const dist = Math.sqrt(tdx * tdx + tdz * tdz);
+      if (dist < 0.5) {
+        movementState.target = null;
+      } else {
+        dx = tdx / dist;
+        dz = tdz / dist;
+      }
+    }
+
+    const speed = MOVE_SPEED * delta;
+
+    if (dx !== 0 || dz !== 0) {
+      movementState.moving = true;
+      movementState.rotation = Math.atan2(dx, dz);
+      movementState.pos.x = Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, movementState.pos.x + dx * speed));
+      movementState.pos.z = Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, movementState.pos.z + dz * speed));
+    } else {
+      movementState.moving = false;
+    }
+
+    // Throttled callback for presence
+    const now = Date.now();
+    if (now - lastBroadcast.current > 200) {
+      lastBroadcast.current = now;
+      onPositionChange(movementState.pos.x, movementState.pos.z);
+    }
+  });
+
+  return (
+    <PlayerCharacter3D
+      position={movementState.pos}
+      name={playerName}
+      isCurrentPlayer
+      rotation={movementState.rotation}
+      moving={movementState.moving}
+    />
+  );
+}
+
+function GroundClickHandler() {
+  const { camera, gl } = useThree();
+  const raycaster = useRef(new THREE.Raycaster());
 
   useEffect(() => {
     const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     const handleClick = (e: MouseEvent) => {
+      if (movementState.activeZone) return;
       const rect = gl.domElement.getBoundingClientRect();
       const mouse = new THREE.Vector2(
         ((e.clientX - rect.left) / rect.width) * 2 - 1,
         -((e.clientY - rect.top) / rect.height) * 2 + 1
       );
-      raycaster.setFromCamera(mouse, camera);
+      raycaster.current.setFromCamera(mouse, camera);
       const intersection = new THREE.Vector3();
-      raycaster.ray.intersectPlane(groundPlane, intersection);
-      if (intersection) {
-        onClickGround(intersection);
+      if (raycaster.current.ray.intersectPlane(groundPlane, intersection)) {
+        movementState.target = intersection.clone();
+        movementState.keys.clear(); // cancel keyboard movement
       }
     };
     gl.domElement.addEventListener("click", handleClick);
     return () => gl.domElement.removeEventListener("click", handleClick);
-  }, [raycaster, camera, gl, onClickGround]);
+  }, [camera, gl]);
 
   return null;
 }
 
 export function GameWorld3D({ profileId, playerName }: { profileId: string; playerName: string }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [pos, setPos] = useState({ x: 0, z: 0 });
   const [otherPlayers, setOtherPlayers] = useState<OtherPlayer[]>([]);
   const [activeZone, setActiveZone] = useState<string | null>(null);
-  const keysRef = useRef(new Set<string>());
-  const posRef = useRef(pos);
-  const targetRef = useRef<{ x: number; z: number } | null>(null);
-  const rotationRef = useRef(0);
-  const movingRef = useRef(false);
-  posRef.current = pos;
+  const [currentZoneId, setCurrentZoneId] = useState<string | null>(null);
+
+  // Sync activeZone to movementState
+  useEffect(() => {
+    movementState.activeZone = activeZone;
+  }, [activeZone]);
+
+  // Poll zone detection from ref-based position
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const zone = getZoneAt(movementState.pos.x, movementState.pos.z);
+      setCurrentZoneId(zone?.id ?? null);
+    }, 200);
+    return () => clearInterval(interval);
+  }, []);
 
   // URL zone auto-enter
   useEffect(() => {
@@ -76,30 +162,30 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
     if (zoneParam) {
       const zone = ZONE_BUILDINGS.find((z) => z.id === zoneParam);
       if (zone) {
-        setPos({ x: zone.position[0], z: zone.position[2] });
+        movementState.pos.set(zone.position[0], 0, zone.position[2]);
         setActiveZone(zoneParam);
         setSearchParams({}, { replace: true });
       }
     }
   }, []);
 
-  // Keyboard controls
+  // Keyboard controls — directly mutate movementState.keys
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (activeZone) return;
+      if (movementState.activeZone) return;
       const key = e.key.toLowerCase();
       if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
         e.preventDefault();
-        keysRef.current.add(key);
-        targetRef.current = null; // cancel click-to-move
+        movementState.keys.add(key);
+        movementState.target = null;
       }
       if (key === "enter" || key === " ") {
-        const zone = getZoneAt(posRef.current.x, posRef.current.z);
+        const zone = getZoneAt(movementState.pos.x, movementState.pos.z);
         if (zone) setActiveZone(zone.id);
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
-      keysRef.current.delete(e.key.toLowerCase());
+      movementState.keys.delete(e.key.toLowerCase());
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
@@ -107,46 +193,7 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [activeZone]);
-
-  // Movement loop
-  useEffect(() => {
-    if (activeZone) return;
-    const interval = setInterval(() => {
-      const keys = keysRef.current;
-      let dx = 0, dz = 0;
-
-      if (keys.has("w") || keys.has("arrowup")) dz -= MOVE_SPEED;
-      if (keys.has("s") || keys.has("arrowdown")) dz += MOVE_SPEED;
-      if (keys.has("a") || keys.has("arrowleft")) dx -= MOVE_SPEED;
-      if (keys.has("d") || keys.has("arrowright")) dx += MOVE_SPEED;
-
-      // Click-to-move
-      if (dx === 0 && dz === 0 && targetRef.current) {
-        const tdx = targetRef.current.x - posRef.current.x;
-        const tdz = targetRef.current.z - posRef.current.z;
-        const dist = Math.sqrt(tdx * tdx + tdz * tdz);
-        if (dist < 0.5) {
-          targetRef.current = null;
-        } else {
-          dx = (tdx / dist) * MOVE_SPEED;
-          dz = (tdz / dist) * MOVE_SPEED;
-        }
-      }
-
-      if (dx !== 0 || dz !== 0) {
-        movingRef.current = true;
-        rotationRef.current = Math.atan2(dx, dz);
-        setPos((p) => ({
-          x: Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, p.x + dx)),
-          z: Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, p.z + dz)),
-        }));
-      } else {
-        movingRef.current = false;
-      }
-    }, 16);
-    return () => clearInterval(interval);
-  }, [activeZone]);
+  }, []);
 
   // Presence broadcast
   useEffect(() => {
@@ -167,56 +214,32 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
       })
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
-          await channel.track({ x: pos.x, z: pos.z, name: playerName, current_zone: activeZone });
+          await channel.track({ x: movementState.pos.x, z: movementState.pos.z, name: playerName, current_zone: activeZone });
         }
       });
 
     return () => { supabase.removeChannel(channel); };
   }, [profileId, playerName]);
 
-  // Throttled presence update
-  const lastTrackRef = useRef(0);
-  useEffect(() => {
-    const now = Date.now();
-    if (now - lastTrackRef.current < 200) return;
-    lastTrackRef.current = now;
+  const handlePositionChange = useCallback((x: number, z: number) => {
     const channel = supabase.channel("world-presence");
-    channel.track({ x: pos.x, z: pos.z, name: playerName, current_zone: activeZone }).catch(() => {});
-  }, [pos, activeZone]);
+    channel.track({ x, z, name: playerName, current_zone: movementState.activeZone }).catch(() => {});
+  }, [playerName]);
 
-  const handleClickGround = useCallback((point: THREE.Vector3) => {
-    if (activeZone) return;
-    targetRef.current = {
-      x: Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, point.x)),
-      z: Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, point.z)),
-    };
-  }, [activeZone]);
-
-  const currentZone = getZoneAt(pos.x, pos.z);
-  const playerPos = new THREE.Vector3(pos.x, 0, pos.z);
+  const currentZone = currentZoneId ? ZONE_BUILDINGS.find(z => z.id === currentZoneId) : null;
 
   return (
     <div className="relative h-screen w-full overflow-hidden">
       <Canvas shadows camera={{ position: [0, 8, 12], fov: 60 }}>
         <WorldMap3D />
-        <GroundClickHandler onClickGround={handleClickGround} />
+        <GroundClickHandler />
+        <PlayerController playerName={playerName} onPositionChange={handlePositionChange} />
 
-        {/* Current player */}
-        <PlayerCharacter3D
-          position={playerPos}
-          name={playerName}
-          isCurrentPlayer
-          rotation={rotationRef.current}
-          moving={movingRef.current}
-        />
-
-        {/* Other players */}
         {otherPlayers.map((p) => (
           <OtherPlayer3D key={p.profile_id} x={p.x} z={p.z} name={p.name} />
         ))}
       </Canvas>
 
-      {/* HTML Overlays */}
       <ZonePrompt
         zoneName={currentZone?.label ?? ""}
         zoneIcon={currentZone?.icon ?? ""}
@@ -230,7 +253,6 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
         onClose={() => setActiveZone(null)}
       />
 
-      {/* Controls HUD */}
       {!activeZone && (
         <div className="fixed left-1/2 top-4 z-30 -translate-x-1/2 rounded-lg border border-white/10 bg-black/70 px-5 py-2 font-fredoka text-xs text-white shadow-lg backdrop-blur">
           <span className="inline-flex items-center gap-2">
