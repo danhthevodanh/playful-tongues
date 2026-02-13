@@ -4,7 +4,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { supabase } from "@/integrations/supabase/client";
 import { WorldMap3D, ZONE_BUILDINGS } from "./WorldMap3D";
-import { PlayerCharacter3D } from "./PlayerCharacter3D";
+import { PlayerCharacter3D, animationState } from "./PlayerCharacter3D";
 import { OtherPlayer3D } from "./OtherPlayer3D";
 import { ZonePrompt } from "./ZonePrompt";
 import { ZoneOverlay } from "./ZoneOverlay";
@@ -83,11 +83,14 @@ function PlayerController({ playerName, onPositionChange }: { playerName: string
 
     if (dx !== 0 || dz !== 0) {
       movementState.moving = true;
+      animationState.moving = true;
       movementState.rotation = Math.atan2(dx, dz);
+      animationState.rotation = movementState.rotation;
       movementState.pos.x = Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, movementState.pos.x + dx * speed));
       movementState.pos.z = Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, movementState.pos.z + dz * speed));
     } else {
       movementState.moving = false;
+      animationState.moving = false;
     }
 
     // Throttled callback for presence
@@ -103,8 +106,7 @@ function PlayerController({ playerName, onPositionChange }: { playerName: string
       position={movementState.pos}
       name={playerName}
       isCurrentPlayer
-      rotation={movementState.rotation}
-      moving={movementState.moving}
+      useAnimationState
     />
   );
 }

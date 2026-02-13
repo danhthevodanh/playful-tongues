@@ -28,15 +28,23 @@ function lerpAngle(a: number, b: number, t: number) {
   return a + diff * t;
 }
 
+// Mutable animation state readable by useFrame — shared with GameWorld3D's movementState
+export const animationState = {
+  moving: false,
+  rotation: 0,
+};
+
 interface PlayerCharacter3DProps {
   position: THREE.Vector3;
   name: string;
   isCurrentPlayer?: boolean;
   rotation?: number;
   moving?: boolean;
+  /** If true, read moving/rotation from animationState (mutable) instead of props */
+  useAnimationState?: boolean;
 }
 
-export function PlayerCharacter3D({ position, name, isCurrentPlayer, rotation = 0, moving = false }: PlayerCharacter3DProps) {
+export function PlayerCharacter3D({ position, name, isCurrentPlayer, rotation = 0, moving = false, useAnimationState = false }: PlayerCharacter3DProps) {
   const groupRef = useRef<THREE.Group>(null);
   const leftArmPivot = useRef<THREE.Group>(null);
   const rightArmPivot = useRef<THREE.Group>(null);
@@ -50,38 +58,38 @@ export function PlayerCharacter3D({ position, name, isCurrentPlayer, rotation = 
   useFrame((state) => {
     if (!groupRef.current) return;
 
+    const isMoving = useAnimationState ? animationState.moving : moving;
+    const targetRotation = useAnimationState ? animationState.rotation : rotation;
+
     groupRef.current.position.lerp(position, 0.15);
 
     // Smooth rotation
-    currentRotation.current = lerpAngle(currentRotation.current, rotation, 0.12);
+    currentRotation.current = lerpAngle(currentRotation.current, targetRotation, 0.12);
     groupRef.current.rotation.y = currentRotation.current;
 
     const t = state.clock.elapsedTime;
 
-    if (moving) {
+    if (isMoving) {
       const swingSpeed = 10;
       const armSwing = Math.sin(t * swingSpeed) * 0.8;
       const legSwing = Math.sin(t * swingSpeed) * 0.6;
 
-      // Arms swing from shoulder pivot
       if (leftArmPivot.current) leftArmPivot.current.rotation.x = armSwing;
       if (rightArmPivot.current) rightArmPivot.current.rotation.x = -armSwing;
-
-      // Legs swing from hip pivot
       if (leftLegPivot.current) leftLegPivot.current.rotation.x = -legSwing;
       if (rightLegPivot.current) rightLegPivot.current.rotation.x = legSwing;
 
-      // Body bob up/down
       if (bodyBob.current) {
         bodyBob.current.position.y = Math.abs(Math.sin(t * swingSpeed)) * 0.15;
       }
     } else {
-      // Idle breathing
+      // Smooth return to idle
       if (leftArmPivot.current) leftArmPivot.current.rotation.x *= 0.85;
       if (rightArmPivot.current) rightArmPivot.current.rotation.x *= 0.85;
       if (leftLegPivot.current) leftLegPivot.current.rotation.x *= 0.85;
       if (rightLegPivot.current) rightLegPivot.current.rotation.x *= 0.85;
 
+      // Idle breathing
       if (bodyBob.current) {
         bodyBob.current.position.y = Math.sin(t * 2) * 0.05;
       }
@@ -111,7 +119,6 @@ export function PlayerCharacter3D({ position, name, isCurrentPlayer, rotation = 
           <boxGeometry args={[1.2, 1.2, 1.2]} />
           <meshStandardMaterial color={colors.skin} />
         </mesh>
-        {/* Eyes */}
         <mesh position={[-0.25, 3.3, 0.61]}>
           <boxGeometry args={[0.2, 0.15, 0.05]} />
           <meshStandardMaterial color="#222" />
@@ -120,7 +127,6 @@ export function PlayerCharacter3D({ position, name, isCurrentPlayer, rotation = 
           <boxGeometry args={[0.2, 0.15, 0.05]} />
           <meshStandardMaterial color="#222" />
         </mesh>
-        {/* Smile */}
         <mesh position={[0, 3.0, 0.61]}>
           <boxGeometry args={[0.4, 0.08, 0.05]} />
           <meshStandardMaterial color="#222" />
@@ -132,13 +138,12 @@ export function PlayerCharacter3D({ position, name, isCurrentPlayer, rotation = 
           <meshStandardMaterial color={colors.shirt} />
         </mesh>
 
-        {/* Left Arm — pivot at shoulder (top of arm) */}
+        {/* Left Arm — pivot at shoulder */}
         <group ref={leftArmPivot} position={[-1.1, 2.8, 0]}>
           <mesh position={[0, -0.8, 0]} castShadow>
             <boxGeometry args={[0.5, 1.6, 0.5]} />
             <meshStandardMaterial color={colors.shirt} />
           </mesh>
-          {/* Hand */}
           <mesh position={[0, -1.7, 0]} castShadow>
             <boxGeometry args={[0.4, 0.3, 0.4]} />
             <meshStandardMaterial color={colors.skin} />
@@ -151,20 +156,18 @@ export function PlayerCharacter3D({ position, name, isCurrentPlayer, rotation = 
             <boxGeometry args={[0.5, 1.6, 0.5]} />
             <meshStandardMaterial color={colors.shirt} />
           </mesh>
-          {/* Hand */}
           <mesh position={[0, -1.7, 0]} castShadow>
             <boxGeometry args={[0.4, 0.3, 0.4]} />
             <meshStandardMaterial color={colors.skin} />
           </mesh>
         </group>
 
-        {/* Left Leg — pivot at hip (top of leg) */}
+        {/* Left Leg — pivot at hip */}
         <group ref={leftLegPivot} position={[-0.35, 1.2, 0]}>
           <mesh position={[0, -0.6, 0]} castShadow>
             <boxGeometry args={[0.5, 1.2, 0.6]} />
             <meshStandardMaterial color={colors.pants} />
           </mesh>
-          {/* Foot */}
           <mesh position={[0, -1.25, 0.1]} castShadow>
             <boxGeometry args={[0.5, 0.3, 0.7]} />
             <meshStandardMaterial color="#333" />
@@ -177,7 +180,6 @@ export function PlayerCharacter3D({ position, name, isCurrentPlayer, rotation = 
             <boxGeometry args={[0.5, 1.2, 0.6]} />
             <meshStandardMaterial color={colors.pants} />
           </mesh>
-          {/* Foot */}
           <mesh position={[0, -1.25, 0.1]} castShadow>
             <boxGeometry args={[0.5, 0.3, 0.7]} />
             <meshStandardMaterial color="#333" />
