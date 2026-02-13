@@ -14,6 +14,12 @@ export function useSpeechRecognition({ onResult, onError, lang = "en-US" }: UseS
   const [transcript, setTranscript] = useState("");
   const [isSupported, setIsSupported] = useState(true);
   const recognitionRef = useRef<SpeechRecognitionInstance>(null);
+  const onResultRef = useRef(onResult);
+  const onErrorRef = useRef(onError);
+
+  // Keep refs in sync without re-running the effect
+  onResultRef.current = onResult;
+  onErrorRef.current = onError;
 
   useEffect(() => {
     const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -45,13 +51,13 @@ export function useSpeechRecognition({ onResult, onError, lang = "en-US" }: UseS
 
       if (finalTranscript) {
         const words = finalTranscript.trim().split(/\s+/).filter(Boolean);
-        onResult?.(finalTranscript.trim(), words.length);
+        onResultRef.current?.(finalTranscript.trim(), words.length);
       }
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       if (event.error !== "aborted") {
-        onError?.(event.error);
+        onErrorRef.current?.(event.error);
       }
       setIsListening(false);
     };
@@ -65,7 +71,7 @@ export function useSpeechRecognition({ onResult, onError, lang = "en-US" }: UseS
     return () => {
       recognition.abort();
     };
-  }, [lang, onResult, onError]);
+  }, [lang]);
 
   const startListening = useCallback(() => {
     if (!recognitionRef.current) return;

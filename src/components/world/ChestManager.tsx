@@ -52,6 +52,7 @@ export function ChestManager({ playerPos, onChestBreak }: ChestManagerProps) {
   const [chests, setChests] = useState<ChestData[]>(() => generateChestPositions(6));
   const [breakingId, setBreakingId] = useState<string | null>(null);
   const [nearestId, setNearestId] = useState<string | null>(null);
+  const nearestIdRef = useRef<string | null>(null);
   const respawnTimer = useRef(0);
 
   const PROXIMITY = 6;
@@ -72,6 +73,7 @@ export function ChestManager({ playerPos, onChestBreak }: ChestManagerProps) {
     }
 
     setNearestId(closest);
+    nearestIdRef.current = closest;
     chestProximityState.nearestChestId = closest;
 
     // Respawn timer
@@ -97,13 +99,14 @@ export function ChestManager({ playerPos, onChestBreak }: ChestManagerProps) {
   // Expose break trigger
   useEffect(() => {
     const handler = () => {
-      if (nearestId && !breakingId) {
-        setBreakingId(nearestId);
+      const currentNearest = nearestIdRef.current;
+      if (currentNearest && !breakingId) {
+        setBreakingId(currentNearest);
       }
     };
     window.addEventListener("chest-break", handler);
     return () => window.removeEventListener("chest-break", handler);
-  }, [nearestId, breakingId]);
+  }, [breakingId]);
 
   return (
     <>
