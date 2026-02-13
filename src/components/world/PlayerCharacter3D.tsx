@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useMemo } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
@@ -21,6 +21,13 @@ function nameToColors(name: string) {
   return { skin, shirt, pants };
 }
 
+function lerpAngle(a: number, b: number, t: number) {
+  let diff = b - a;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  return a + diff * t;
+}
+
 interface PlayerCharacter3DProps {
   position: THREE.Vector3;
   name: string;
@@ -35,37 +42,40 @@ export function PlayerCharacter3D({ position, name, isCurrentPlayer, rotation = 
   const rightArmRef = useRef<THREE.Mesh>(null);
   const leftLegRef = useRef<THREE.Mesh>(null);
   const rightLegRef = useRef<THREE.Mesh>(null);
-  const cameraRef = useRef({ current: new THREE.Vector3() });
+  const currentRotation = useRef(0);
   const { camera } = useThree();
-  const colors = nameToColors(name);
+  const colors = useMemo(() => nameToColors(name), [name]);
 
-  useFrame((state, delta) => {
+  useFrame((state) => {
     if (!groupRef.current) return;
 
+    // Smooth position
     groupRef.current.position.lerp(position, 0.15);
-    groupRef.current.rotation.y = rotation;
 
-    // Arm/leg swing animation when moving
+    // Smooth rotation
+    currentRotation.current = lerpAngle(currentRotation.current, rotation, 0.12);
+    groupRef.current.rotation.y = currentRotation.current;
+
+    // Arm/leg swing animation
     const swing = moving ? Math.sin(state.clock.elapsedTime * 8) * 0.6 : 0;
     if (leftArmRef.current) leftArmRef.current.rotation.x = swing;
     if (rightArmRef.current) rightArmRef.current.rotation.x = -swing;
     if (leftLegRef.current) leftLegRef.current.rotation.x = -swing;
     if (rightLegRef.current) rightLegRef.current.rotation.x = swing;
 
-    // Camera follow for current player
+    // Fixed third-person camera (doesn't rotate with player)
     if (isCurrentPlayer) {
       const targetCamPos = new THREE.Vector3(
-        groupRef.current.position.x - Math.sin(rotation) * 12,
-        groupRef.current.position.y + 8,
-        groupRef.current.position.z - Math.cos(rotation) * 12
+        groupRef.current.position.x,
+        groupRef.current.position.y + 14,
+        groupRef.current.position.z + 18
       );
       camera.position.lerp(targetCamPos, 0.05);
-      const lookTarget = new THREE.Vector3(
+      camera.lookAt(
         groupRef.current.position.x,
-        groupRef.current.position.y + 2,
+        groupRef.current.position.y + 1,
         groupRef.current.position.z
       );
-      camera.lookAt(lookTarget);
     }
   });
 
