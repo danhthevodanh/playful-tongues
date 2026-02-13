@@ -166,8 +166,14 @@ export function GameWorld({ profileId, playerName }: { profileId: string; player
 
       {/* Controls hint */}
       {!activeZone && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-30 rounded-full bg-card/80 backdrop-blur px-4 py-1.5 font-nunito text-xs text-muted-foreground shadow">
-          WASD / Arrow keys to move · Click to walk · Enter to interact
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-30 rounded-lg bg-[hsl(0,0%,0%)]/70 backdrop-blur px-5 py-2 font-fredoka text-xs text-white shadow-lg border border-white/10">
+          <span className="inline-flex items-center gap-2">
+            <kbd className="px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-bold">WASD</kbd> Move
+            <span className="text-white/40">·</span>
+            <kbd className="px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-bold">Click</kbd> Walk
+            <span className="text-white/40">·</span>
+            <kbd className="px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-bold">Enter</kbd> Interact
+          </span>
         </div>
       )}
     </div>
