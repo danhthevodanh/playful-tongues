@@ -96,6 +96,50 @@ export type Database = {
           },
         ]
       }
+      player_positions: {
+        Row: {
+          created_at: string
+          current_zone: string | null
+          id: string
+          is_online: boolean
+          last_seen: string
+          profile_id: string
+          updated_at: string
+          x: number
+          y: number
+        }
+        Insert: {
+          created_at?: string
+          current_zone?: string | null
+          id?: string
+          is_online?: boolean
+          last_seen?: string
+          profile_id: string
+          updated_at?: string
+          x?: number
+          y?: number
+        }
+        Update: {
+          created_at?: string
+          current_zone?: string | null
+          id?: string
+          is_online?: boolean
+          last_seen?: string
+          profile_id?: string
+          updated_at?: string
+          x?: number
+          y?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_positions_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           auth_id: string | null

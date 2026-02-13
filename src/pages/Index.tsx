@@ -12,28 +12,28 @@ const PORTALS = [
     description: "Grow your creature by speaking!",
     icon: "🐾",
     color: "hsl(260, 67%, 55%)",
-    to: "/pet",
+    to: "/world?zone=pet",
   },
   {
     title: "Voice Obby",
     description: "Shout to jump & run!",
     icon: "🏃",
     color: "hsl(170, 60%, 50%)",
-    to: "/obby",
+    to: "/world?zone=obby",
   },
   {
     title: "Magic NPC",
     description: "Chat with a curious traveler",
     icon: "🗣️",
     color: "hsl(35, 95%, 58%)",
-    to: "/npc",
+    to: "/world?zone=npc",
   },
   {
     title: "Prop Hunt",
     description: "Find & say objects with friends!",
     icon: "🔍",
     color: "hsl(330, 80%, 60%)",
-    to: "/prop-hunt",
+    to: "/world?zone=prop-hunt",
   },
 ];
 
@@ -118,6 +118,18 @@ const Index = () => {
         >
           Speak English to power your world! Your pet grows every time you talk. 🎤
         </motion.p>
+
+        {user && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
+            <Button
+              size="lg"
+              className="mt-4 rounded-full font-fredoka text-lg px-10 bg-secondary hover:bg-secondary/90"
+              onClick={() => navigate("/world")}
+            >
+              🌍 Enter World
+            </Button>
+          </motion.div>
+        )}
 
         {/* Game Portals */}
         <div className="mt-10 grid w-full max-w-2xl grid-cols-2 gap-4 px-2 md:gap-6">

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import World from "./pages/World";
 import Pet from "./pages/Pet";
 import Obby from "./pages/Obby";
 import Npc from "./pages/Npc";
@@ -22,6 +23,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/world" element={<World />} />
           <Route path="/pet" element={<Pet />} />
           <Route path="/obby" element={<Obby />} />
           <Route path="/npc" element={<Npc />} />
