@@ -35,17 +35,6 @@ function ZoneContent({ zoneId }: { zoneId: string }) {
           <p className="font-nunito text-xs text-muted-foreground">🚧 Coming soon!</p>
         </div>
       );
-    case "prop-hunt":
-      return (
-        <div className="flex flex-col items-center gap-4 py-8">
-          <motion.span className="text-6xl" animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 2, repeat: Infinity }}>🔍</motion.span>
-          <h2 className="font-fredoka text-xl text-foreground">Prop Hunt</h2>
-          <p className="font-nunito text-muted-foreground text-center max-w-sm">
-            Find objects and <span className="font-bold text-[hsl(var(--game-pink))]">say their names</span> with friends!
-          </p>
-          <p className="font-nunito text-xs text-muted-foreground">🚧 Coming soon!</p>
-        </div>
-      );
     default:
       return null;
   }

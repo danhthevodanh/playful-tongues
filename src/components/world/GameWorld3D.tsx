@@ -2,14 +2,18 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
+import { Mic, MicOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { WorldMap3D, ZONE_BUILDINGS } from "./WorldMap3D";
 import { PlayerCharacter3D, animationState } from "./PlayerCharacter3D";
 import { OtherPlayer3D } from "./OtherPlayer3D";
 import { ZonePrompt } from "./ZonePrompt";
 import { ZoneOverlay } from "./ZoneOverlay";
+import { ChestManager, chestProximityState } from "./ChestManager";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { motion, AnimatePresence } from "framer-motion";
 
-const MOVE_SPEED = 15; // units per second
+const MOVE_SPEED = 15;
 const ZONE_TRIGGER_DIST = 12;
 const WORLD_BOUND = 90;
 
@@ -32,7 +36,7 @@ function getZoneAt(x: number, z: number) {
   return null;
 }
 
-// Shared movement state — lives outside React render cycle
+// Shared movement state
 const movementState = {
   keys: new Set<string>(),
   pos: new THREE.Vector3(0, 0, 0),
@@ -59,14 +63,12 @@ function PlayerController({ playerName, onPositionChange }: { playerName: string
     if (keys.has("a") || keys.has("arrowleft")) dx -= 1;
     if (keys.has("d") || keys.has("arrowright")) dx += 1;
 
-    // Normalize diagonal
     if (dx !== 0 && dz !== 0) {
       const len = Math.sqrt(dx * dx + dz * dz);
       dx /= len;
       dz /= len;
     }
 
-    // Click-to-move fallback
     if (dx === 0 && dz === 0 && movementState.target) {
       const tdx = movementState.target.x - movementState.pos.x;
       const tdz = movementState.target.z - movementState.pos.z;
@@ -93,7 +95,6 @@ function PlayerController({ playerName, onPositionChange }: { playerName: string
       animationState.moving = false;
     }
 
-    // Throttled callback for presence
     const now = Date.now();
     if (now - lastBroadcast.current > 200) {
       lastBroadcast.current = now;
@@ -128,7 +129,7 @@ function GroundClickHandler() {
       const intersection = new THREE.Vector3();
       if (raycaster.current.ray.intersectPlane(groundPlane, intersection)) {
         movementState.target = intersection.clone();
-        movementState.keys.clear(); // cancel keyboard movement
+        movementState.keys.clear();
       }
     };
     gl.domElement.addEventListener("click", handleClick);
@@ -138,18 +139,98 @@ function GroundClickHandler() {
   return null;
 }
 
+// Rewards floating text
+function RewardPopup({ text, onDone }: { text: string; onDone: () => void }) {
+  return (
+    <motion.div
+      className="pointer-events-none fixed left-1/2 top-1/3 z-50 -translate-x-1/2 font-fredoka text-2xl font-bold text-yellow-300 drop-shadow-lg"
+      initial={{ opacity: 1, y: 0, scale: 1 }}
+      animate={{ opacity: 0, y: -60, scale: 1.3 }}
+      transition={{ duration: 1.2 }}
+      onAnimationComplete={onDone}
+    >
+      {text}
+    </motion.div>
+  );
+}
+
 export function GameWorld3D({ profileId, playerName }: { profileId: string; playerName: string }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [otherPlayers, setOtherPlayers] = useState<OtherPlayer[]>([]);
   const [activeZone, setActiveZone] = useState<string | null>(null);
   const [currentZoneId, setCurrentZoneId] = useState<string | null>(null);
 
-  // Sync activeZone to movementState
-  useEffect(() => {
-    movementState.activeZone = activeZone;
-  }, [activeZone]);
+  // Chest/rewards state
+  const [sessionCoins, setSessionCoins] = useState(0);
+  const [sessionXP, setSessionXP] = useState(0);
+  const [rewardPopups, setRewardPopups] = useState<{ id: number; text: string }[]>([]);
+  const [nearChest, setNearChest] = useState(false);
+  const popupCounter = useRef(0);
 
-  // Poll zone detection from ref-based position
+  // Voice
+  const { isListening, transcript, isSupported, startListening, stopListening } = useSpeechRecognition({
+    onResult: (text) => {
+      if (text.toLowerCase().includes("break") && chestProximityState.nearestChestId) {
+        window.dispatchEvent(new Event("chest-break"));
+      }
+    },
+  });
+
+  // Poll chest proximity for HUD
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNearChest(!!chestProximityState.nearestChestId);
+    }, 200);
+    return () => clearInterval(interval);
+  }, []);
+
+  // V key for voice
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === "v" && !activeZone) {
+        if (isListening) {
+          stopListening();
+        } else if (nearChest) {
+          startListening();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isListening, nearChest, activeZone, startListening, stopListening]);
+
+  const handleChestBreak = useCallback(() => {
+    const coins = 10;
+    const xp = 25;
+    setSessionCoins(prev => prev + coins);
+    setSessionXP(prev => prev + xp);
+
+    const id1 = ++popupCounter.current;
+    const id2 = ++popupCounter.current;
+    setRewardPopups(prev => [...prev, { id: id1, text: `+${coins} 🪙 Coins` }, { id: id2, text: `+${xp} ⭐ XP` }]);
+
+    // Save to DB
+    supabase
+      .from("game_progress")
+      .select("id, score")
+      .eq("profile_id", profileId)
+      .eq("game_mode", "prop-hunt")
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          supabase.from("game_progress").update({ score: (data.score || 0) + coins }).eq("id", data.id).then(() => {});
+        } else {
+          supabase.from("game_progress").insert({ profile_id: profileId, game_mode: "prop-hunt", score: coins }).then(() => {});
+        }
+      });
+
+    stopListening();
+  }, [profileId, stopListening]);
+
+  // Sync activeZone to movementState
+  useEffect(() => { movementState.activeZone = activeZone; }, [activeZone]);
+
+  // Poll zone detection
   useEffect(() => {
     const interval = setInterval(() => {
       const zone = getZoneAt(movementState.pos.x, movementState.pos.z);
@@ -171,7 +252,7 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
     }
   }, []);
 
-  // Keyboard controls — directly mutate movementState.keys
+  // Keyboard controls
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (movementState.activeZone) return;
@@ -230,13 +311,20 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
 
   const currentZone = currentZoneId ? ZONE_BUILDINGS.find(z => z.id === currentZoneId) : null;
 
+  const removePopup = useCallback((id: number) => {
+    setRewardPopups(prev => prev.filter(p => p.id !== id));
+  }, []);
+
   return (
     <div className="relative h-screen w-full overflow-hidden">
       <Canvas shadows camera={{ position: [0, 8, 12], fov: 60 }}>
         <WorldMap3D />
         <GroundClickHandler />
         <PlayerController playerName={playerName} onPositionChange={handlePositionChange} />
-
+        <ChestManager
+          playerPos={movementState.pos}
+          onChestBreak={handleChestBreak}
+        />
         {otherPlayers.map((p) => (
           <OtherPlayer3D key={p.profile_id} x={p.x} z={p.z} name={p.name} />
         ))}
@@ -255,6 +343,41 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
         onClose={() => setActiveZone(null)}
       />
 
+      {/* Reward popups */}
+      <AnimatePresence>
+        {rewardPopups.map(p => (
+          <RewardPopup key={p.id} text={p.text} onDone={() => removePopup(p.id)} />
+        ))}
+      </AnimatePresence>
+
+      {/* Rewards HUD */}
+      {!activeZone && (
+        <div className="fixed right-4 top-4 z-30 rounded-xl border border-yellow-500/20 bg-black/70 px-4 py-2 font-fredoka text-sm text-white backdrop-blur">
+          <div className="flex items-center gap-3">
+            <span>🪙 {sessionCoins}</span>
+            <span>⭐ {sessionXP} XP</span>
+          </div>
+        </div>
+      )}
+
+      {/* Voice/mic HUD when near chest */}
+      {!activeZone && nearChest && isSupported && (
+        <div className="fixed bottom-24 left-1/2 z-30 -translate-x-1/2">
+          <button
+            onClick={isListening ? stopListening : startListening}
+            className={`flex items-center gap-2 rounded-full px-5 py-3 font-fredoka text-sm font-bold shadow-lg transition-all ${
+              isListening
+                ? "bg-red-500 text-white animate-pulse"
+                : "bg-yellow-500 text-black hover:bg-yellow-400"
+            }`}
+          >
+            {isListening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+            {isListening ? `Listening... ${transcript || ""}` : 'Press V or Tap — Shout "BREAK!"'}
+          </button>
+        </div>
+      )}
+
+      {/* Controls HUD */}
       {!activeZone && (
         <div className="fixed left-1/2 top-4 z-30 -translate-x-1/2 rounded-lg border border-white/10 bg-black/70 px-5 py-2 font-fredoka text-xs text-white shadow-lg backdrop-blur">
           <span className="inline-flex items-center gap-2">
@@ -263,6 +386,8 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
             <kbd className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">Click</kbd> Walk
             <span className="text-white/40">·</span>
             <kbd className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">Enter</kbd> Interact
+            <span className="text-white/40">·</span>
+            <kbd className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">V</kbd> 🎤 Voice
           </span>
         </div>
       )}

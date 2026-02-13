@@ -4,7 +4,6 @@ import { Sky, Html, Grid } from "@react-three/drei";
 
 const ZONE_BUILDINGS = [
   { id: "npc", label: "NPC Hut", icon: "🧙‍♂️", color: "#e8913a", position: [-30, 0, -30] as [number, number, number] },
-  { id: "prop-hunt", label: "Prop Hunt", icon: "🔍", color: "#d94fa0", position: [30, 0, -30] as [number, number, number] },
   { id: "pet", label: "Pet Garden", icon: "🐾", color: "#7c4dcc", position: [-30, 0, 30] as [number, number, number] },
   { id: "obby", label: "Obby Track", icon: "🏃", color: "#3dbf8f", position: [30, 0, 30] as [number, number, number] },
 ];
