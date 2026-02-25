@@ -21,92 +21,136 @@ export function useSpeechRecognition({
   const onResultRef = useRef(onResult);
   const onErrorRef = useRef(onError);
   const wantActive = useRef(false);
+  const restartTimeoutRef = useRef<number | null>(null);
 
   onResultRef.current = onResult;
   onErrorRef.current = onError;
 
   useEffect(() => {
-    const SpeechRecognitionCtor =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognitionCtor) {
-      setIsSupported(false);
-      return;
+    const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) setIsSupported(false);
+  }, []);
+
+  const createAndStart = useCallback(() => {
+    if (restartTimeoutRef.current) {
+      clearTimeout(restartTimeoutRef.current);
+      restartTimeoutRef.current = null;
+    }
+
+    const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) return;
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch (e) { }
     }
 
     const recognition = new SpeechRecognitionCtor();
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = lang;
+    recognition.maxAlternatives = 3;
 
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let finalTranscript = "";
-      let interimTranscript = "";
+    // Add Grammar if supported
+    const GrammarList = (window as any).SpeechGrammarList || (window as any).webkitSpeechGrammarList;
+    if (GrammarList) {
+      const grammar = "#JSGF V1.0; grammar keywords; public <keyword> = break | brake | broke | brick | back | lake | cake | fake | shake | rake | take | make | great | bread | freak | prick | work | beach | bleach | reach | teach | pray | bray | brey | brk | brek | brik | rick | rock | raik | wreck | wake | wake up ;";
+      const speechRecognitionList = new GrammarList();
+      speechRecognitionList.addFromString(grammar, 1);
+      recognition.grammars = speechRecognitionList;
+    }
 
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          finalTranscript += result[0].transcript;
-        } else {
-          interimTranscript += result[0].transcript;
+    recognition.onresult = (event: any) => {
+      let fullTranscript = "";
+      // Collect BEST alternatives from each result segment
+      for (let i = 0; i < event.results.length; i++) {
+        fullTranscript += event.results[i][0].transcript;
+
+        // Also check if ANY of the alternatives matches our core keyword
+        // and append it if it exists (hidden logic booster)
+        for (let j = 1; j < event.results[i].length; j++) {
+          const alt = event.results[i][j].transcript.toLowerCase();
+          if (alt.includes("break") || alt.includes("brake")) {
+            fullTranscript += " break"; // Force injection if it's an alternative
+            break;
+          }
         }
       }
-
-      const current = finalTranscript || interimTranscript;
+      const current = fullTranscript.trim();
       setTranscript(current);
-
       if (current) {
-        const words = current.trim().split(/\s+/).filter(Boolean);
-        onResultRef.current?.(current.trim(), words.length);
+        onResultRef.current?.(current, current.split(/\s+/).length);
       }
     };
 
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      // Ignore transient errors that happen during normal operation
-      if (event.error === "aborted" || event.error === "no-speech") return;
-      onErrorRef.current?.(event.error);
-      wantActive.current = false;
-      setIsListening(false);
+    recognition.onerror = (event: any) => {
+      console.warn("Speech recognition error:", event.error);
+      if (event.error === "not-allowed") {
+        setIsSupported(false);
+        wantActive.current = false;
+        setIsListening(false);
+      }
     };
 
     recognition.onend = () => {
-      // Auto-restart if caller still wants us active (hold-to-talk)
+      console.log("Speech recognition onend. wantActive:", wantActive.current);
       if (wantActive.current) {
-        try {
-          recognition.start();
-          return;
-        } catch {
-          // fall through to stop
-        }
+        // Debounced restart to avoid "rapid fire" start calls
+        restartTimeoutRef.current = window.setTimeout(() => {
+          if (wantActive.current) createAndStart();
+        }, 150);
+      } else {
+        setIsListening(false);
       }
-      wantActive.current = false;
-      setIsListening(false);
     };
 
-    recognitionRef.current = recognition;
-
-    return () => {
-      wantActive.current = false;
-      recognition.abort();
-    };
+    try {
+      recognition.start();
+      recognitionRef.current = recognition;
+      setIsListening(true);
+    } catch (e) {
+      console.error("Failed to start recognition:", e);
+    }
   }, [lang]);
 
   const stopListening = useCallback(() => {
+    console.log("Stopping speech recognition manually");
     wantActive.current = false;
-    recognitionRef.current?.stop();
+    if (restartTimeoutRef.current) {
+      clearTimeout(restartTimeoutRef.current);
+      restartTimeoutRef.current = null;
+    }
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch (e) { }
+      recognitionRef.current = null;
+    }
     setIsListening(false);
   }, []);
 
   const startListening = useCallback(() => {
-    if (!recognitionRef.current || wantActive.current) return;
+    if (wantActive.current) return;
+    console.log("Starting speech recognition manually");
     setTranscript("");
     wantActive.current = true;
-    try {
-      recognitionRef.current.start();
-      setIsListening(true);
-    } catch {
-      // Already started — that's fine, just mark active
-      setIsListening(true);
-    }
+    createAndStart();
+  }, [createAndStart]);
+
+  useEffect(() => {
+    return () => {
+      wantActive.current = false;
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+        restartTimeoutRef.current = null;
+      }
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+        recognitionRef.current = null;
+      }
+    };
   }, []);
 
   return { isListening, transcript, isSupported, startListening, stopListening };

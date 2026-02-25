@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
+import { motion } from "framer-motion";
+import { Mic } from "lucide-react";
 import * as THREE from "three";
 
 interface Chest3DProps {
@@ -102,10 +104,17 @@ export function Chest3D({ id, position, isNear, breaking, onBreakComplete }: Che
 
       {/* Label when near */}
       {isNear && !breaking && (
-        <Html position={[0, 2.5, 0]} center distanceFactor={30}>
-          <div className="pointer-events-none select-none whitespace-nowrap rounded-lg bg-black/80 px-3 py-1.5 backdrop-blur-sm border border-yellow-500/30">
-            <span className="font-fredoka text-sm font-bold text-yellow-300">🎤 Shout BREAK!</span>
-          </div>
+        <Html position={[0, 2.8, 0]} center distanceFactor={30}>
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: [1, 1.1, 1], opacity: 1 }}
+            transition={{ repeat: Infinity, duration: 1.5 }}
+            className="pointer-events-none select-none whitespace-nowrap rounded-xl bg-yellow-500 px-4 py-2 shadow-2xl border-2 border-white"
+          >
+            <span className="font-fredoka text-lg font-black text-black flex items-center gap-2">
+              <Mic className="h-5 w-5 animate-pulse" /> Shout "BREAK"!
+            </span>
+          </motion.div>
         </Html>
       )}
     </group>

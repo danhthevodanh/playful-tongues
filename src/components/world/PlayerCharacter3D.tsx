@@ -61,7 +61,12 @@ export function PlayerCharacter3D({ position, name, isCurrentPlayer, rotation = 
     const isMoving = useAnimationState ? animationState.moving : moving;
     const targetRotation = useAnimationState ? animationState.rotation : rotation;
 
-    groupRef.current.position.lerp(position, 0.15);
+    if (isCurrentPlayer) {
+      // current player position is already updated linearly in GameWorld3D
+      groupRef.current.position.copy(position);
+    } else {
+      groupRef.current.position.lerp(position, 0.15);
+    }
 
     // Smooth rotation
     currentRotation.current = lerpAngle(currentRotation.current, targetRotation, 0.12);
@@ -97,15 +102,15 @@ export function PlayerCharacter3D({ position, name, isCurrentPlayer, rotation = 
 
     // Fixed third-person camera
     if (isCurrentPlayer) {
-      const targetCamPos = new THREE.Vector3(
+      const topCamPos = new THREE.Vector3(
         groupRef.current.position.x,
-        groupRef.current.position.y + 14,
-        groupRef.current.position.z + 18
+        groupRef.current.position.y + 18,
+        groupRef.current.position.z + 24
       );
-      camera.position.lerp(targetCamPos, 0.05);
+      camera.position.lerp(topCamPos, 0.1);
       camera.lookAt(
         groupRef.current.position.x,
-        groupRef.current.position.y + 1,
+        groupRef.current.position.y + 0.5,
         groupRef.current.position.z
       );
     }

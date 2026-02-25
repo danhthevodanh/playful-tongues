@@ -55,9 +55,13 @@ export function ChestManager({ playerPos, onChestBreak }: ChestManagerProps) {
   const [nearestId, setNearestId] = useState<string | null>(null);
   const nearestIdRef = useRef<string | null>(null);
   const respawnTimer = useRef(0);
+  const chestsRef = useRef(chests);
+  const playerPosRef = useRef(playerPos);
 
-  const PROXIMITY = 6;
+  useEffect(() => { chestsRef.current = chests; }, [chests]);
+  useEffect(() => { playerPosRef.current = playerPos; }, [playerPos]);
 
+  const PROXIMITY = 15;
   useFrame((_, delta) => {
     // Check proximity
     let closest: string | null = null;
@@ -75,8 +79,20 @@ export function ChestManager({ playerPos, onChestBreak }: ChestManagerProps) {
 
     chestProximityState.nearestChestId = closest;
     if (closest !== nearestIdRef.current) {
-      nearestIdRef.current = closest;
-      setNearestId(closest);
+      if (closest) {
+        console.log("Player is now near chest:", closest, "distance:", closestDist);
+        nearestIdRef.current = closest;
+        setNearestId(closest);
+      } else {
+        // Add 1s grace period before losing "near" status
+        setTimeout(() => {
+          if (!chestProximityState.nearestChestId) {
+            console.log("Player is no longer near any chest (grace period over).");
+            nearestIdRef.current = null;
+            setNearestId(null);
+          }
+        }, 1000);
+      }
     }
 
     // Respawn timer
@@ -102,17 +118,40 @@ export function ChestManager({ playerPos, onChestBreak }: ChestManagerProps) {
 
   // Expose break trigger
   useEffect(() => {
-    const handler = () => {
-      const currentNearest = nearestIdRef.current;
-      if (currentNearest && !breakingIdRef.current) {
-        breakingIdRef.current = currentNearest;
-        setBreakingId(currentNearest);
+    const handler = (e: any) => {
+      let targetId = e.detail?.id;
+      const currentChests = chestsRef.current;
+      const currentPos = playerPosRef.current;
+
+      console.log("Chest break event received. Detail ID:", targetId);
+
+      // If no ID provided via event, find the nearest one right now
+      if (!targetId) {
+        let closest = null;
+        let closestDist = PROXIMITY;
+
+        currentChests.forEach(chest => {
+          const dx = currentPos.x - chest.position[0];
+          const dz = currentPos.z - chest.position[2];
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          if (dist < closestDist) {
+            closest = chest.id;
+            closestDist = dist;
+          }
+        });
+        targetId = closest;
+        console.log("No ID in event, finding nearest manually:", targetId);
+      }
+
+      if (targetId && !breakingIdRef.current) {
+        console.log("EXECUTING BREAK for:", targetId);
+        breakingIdRef.current = targetId;
+        setBreakingId(targetId);
       }
     };
     window.addEventListener("chest-break", handler);
     return () => window.removeEventListener("chest-break", handler);
   }, []);
-
   return (
     <>
       {chests.map(chest => (

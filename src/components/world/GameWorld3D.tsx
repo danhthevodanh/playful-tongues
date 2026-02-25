@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
@@ -10,7 +10,7 @@ import { OtherPlayer3D } from "./OtherPlayer3D";
 import { ZonePrompt } from "./ZonePrompt";
 import { ZoneOverlay } from "./ZoneOverlay";
 import { ChestManager, chestProximityState } from "./ChestManager";
-import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { useDeepgramRecognition } from "@/hooks/useDeepgramRecognition";
 import { motion, AnimatePresence } from "framer-motion";
 
 const MOVE_SPEED = 15;
@@ -96,7 +96,7 @@ function PlayerController({ playerName, onPositionChange }: { playerName: string
     }
 
     const now = Date.now();
-    if (now - lastBroadcast.current > 200) {
+    if (now - lastBroadcast.current > 500) {
       lastBroadcast.current = now;
       onPositionChange(movementState.pos.x, movementState.pos.z);
     }
@@ -154,6 +154,120 @@ function RewardPopup({ text, onDone }: { text: string; onDone: () => void }) {
   );
 }
 
+interface GameHUDProps {
+  sessionCoins: number;
+  sessionXP: number;
+  rewardPopups: { id: number; text: string }[];
+  nearChest: boolean;
+  isListening: boolean;
+  transcript: string;
+  isSupported: boolean;
+  activeZone: string | null;
+  currentZone: any;
+  onEnterZone: () => void;
+  onToggleMic: () => void;
+  removePopup: (id: number) => void;
+  onCloseZone: () => void;
+}
+
+const GameHUD = ({
+  sessionCoins,
+  sessionXP,
+  rewardPopups,
+  nearChest,
+  isListening,
+  transcript,
+  isSupported,
+  activeZone,
+  currentZone,
+  onEnterZone,
+  onToggleMic,
+  removePopup,
+  onCloseZone,
+}: GameHUDProps) => {
+  return (
+    <>
+      <ZonePrompt
+        zoneName={currentZone?.label ?? ""}
+        zoneIcon={currentZone?.icon ?? ""}
+        visible={!!currentZone && !activeZone}
+        onEnter={onEnterZone}
+      />
+
+      <ZoneOverlay
+        zoneId={activeZone}
+        zoneName={ZONE_BUILDINGS.find((z) => z.id === activeZone)?.label ?? ""}
+        onClose={onCloseZone}
+      />
+
+      {/* Reward popups */}
+      <AnimatePresence>
+        {rewardPopups.map((p) => (
+          <RewardPopup key={p.id} text={p.text} onDone={() => removePopup(p.id)} />
+        ))}
+      </AnimatePresence>
+
+      {/* Rewards HUD */}
+      {!activeZone && (
+        <div className="fixed right-4 top-4 z-30 rounded-xl border border-yellow-500/20 bg-black/70 px-4 py-2 font-fredoka text-sm text-white backdrop-blur">
+          <div className="flex items-center gap-3">
+            <span>🪙 {sessionCoins}</span>
+            <span>⭐ {sessionXP} XP</span>
+          </div>
+        </div>
+      )}
+
+      {/* Voice/mic HUD when near chest */}
+      {!activeZone && nearChest && isSupported && (
+        <div className="fixed bottom-24 left-1/2 z-30 -translate-x-1/2 flex flex-col items-center gap-3">
+          <button
+            onPointerDown={() => !isListening && onToggleMic()}
+            onPointerUp={() => isListening && onToggleMic()}
+            className={`flex items-center gap-2 rounded-full px-5 py-3 font-fredoka text-sm font-bold shadow-lg transition-all ${isListening
+              ? "bg-red-500 scale-110 text-white animate-pulse"
+              : "bg-yellow-500 text-black hover:bg-yellow-400"
+              }`}
+          >
+            {isListening ? (
+              <div className="flex flex-col items-center">
+                <span className="text-white mb-0.5 tracking-wider uppercase text-[12px]">LISTENING...</span>
+                <span className="text-cyan-200 text-[11px] font-mono bg-black/20 px-2 rounded mt-1">
+                  {transcript ? `HEARD: "${transcript.toUpperCase()}"` : "SHOUT 'BREAK' NOW!"}
+                </span>
+              </div>
+            ) : 'Hold V or Hold Button to Shout "BREAK!"'}
+          </button>
+
+          {/* Debug helper */}
+          {isListening && (
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent("chest-break", { detail: { id: chestProximityState.nearestChestId } }))}
+              className="bg-white/20 hover:bg-white/40 text-white text-[10px] px-3 py-1 rounded-full backdrop-blur transition-colors"
+            >
+              Mic not working? Click to force break
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Controls HUD */}
+      {!activeZone && (
+        <div className="fixed left-1/2 top-4 z-30 -translate-x-1/2 rounded-lg border border-white/10 bg-black/70 px-5 py-2 font-fredoka text-xs text-white shadow-lg backdrop-blur">
+          <span className="inline-flex items-center gap-2">
+            <kbd className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">WASD</kbd> Move
+            <span className="text-white/40">·</span>
+            <kbd className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">Click</kbd> Walk
+            <span className="text-white/40">·</span>
+            <kbd className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">Enter</kbd> Interact
+            <span className="text-white/40">·</span>
+            <kbd className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">V</kbd> 🎤 Voice
+          </span>
+        </div>
+      )}
+    </>
+  );
+};
+
 export function GameWorld3D({ profileId, playerName }: { profileId: string; playerName: string }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [otherPlayers, setOtherPlayers] = useState<OtherPlayer[]>([]);
@@ -168,16 +282,35 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
   const popupCounter = useRef(0);
 
   // Voice
-  const stopListeningRef = useRef<() => void>(() => {});
-  const { isListening, transcript, isSupported, startListening, stopListening } = useSpeechRecognition({
+  const voiceKeywords = useMemo(() => ["break", "brake", "broke", "brick"], []);
+  const lastTriggerTime = useRef(0);
+
+  const { isListening, transcript, isSupported, startListening, stopListening } = useDeepgramRecognition({
     onResult: (text) => {
-      if (text.toLowerCase().includes("break") && chestProximityState.nearestChestId) {
-        window.dispatchEvent(new Event("chest-break"));
-        stopListeningRef.current();
+      const lowerText = text.toLowerCase();
+
+      // With Deepgram, recognition is much better, so we can be slightly more specific
+      // but still keep some variations just in case.
+      const keywords = ["break", "brake", "broke", "brick", "back", "break up"];
+      const hasKeyword = keywords.some(k => lowerText.includes(k)) || /b.*r.*k/i.test(lowerText);
+
+      if (hasKeyword) {
+        const now = Date.now();
+        if (now - lastTriggerTime.current < 800) return;
+
+        lastTriggerTime.current = now;
+        console.log("DEEPGRAM MATCH:", lowerText);
+
+        // Dispatch to ChestManager
+        window.dispatchEvent(new CustomEvent("chest-break", {
+          detail: { id: chestProximityState.nearestChestId }
+        }));
+
+        // No more "DEEPGRAM: BREAK!" popup as requested
       }
     },
+    keywords: voiceKeywords
   });
-  stopListeningRef.current = stopListening;
 
   // Poll chest proximity for HUD
   useEffect(() => {
@@ -187,29 +320,48 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
     return () => clearInterval(interval);
   }, []);
 
-  // V key hold-to-talk — all deps via refs for zero effect churn
+  // V key hold-to-talk - use refs for zero-churn performance
   const startRef = useRef(startListening);
   const stopRef = useRef(stopListening);
   startRef.current = startListening;
   stopRef.current = stopListening;
 
   useEffect(() => {
-    let vHeld = false;
+    let isVDown = false;
+
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() !== "v" || e.repeat || vHeld) return;
-      vHeld = true;
-      startRef.current();
+      if (e.key.toLowerCase() === "v") {
+        if (e.repeat || isVDown) return;
+        isVDown = true;
+        console.log("V KEY DOWN: Starting Mic");
+        startRef.current();
+      }
     };
+
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() !== "v") return;
-      vHeld = false;
-      stopRef.current();
+      if (e.key.toLowerCase() === "v") {
+        isVDown = false;
+        console.log("V KEY UP: Stopping Mic");
+        stopRef.current();
+      }
     };
+
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+
+    // Safety check: if window loses focus, stop mic
+    const onBlur = () => {
+      if (isVDown) {
+        isVDown = false;
+        stopRef.current();
+      }
+    };
+    window.addEventListener("blur", onBlur);
+
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
     };
   }, []);
 
@@ -232,14 +384,12 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
       .maybeSingle()
       .then(({ data }) => {
         if (data) {
-          supabase.from("game_progress").update({ score: (data.score || 0) + coins }).eq("id", data.id).then(() => {});
+          supabase.from("game_progress").update({ score: (data.score || 0) + coins }).eq("id", data.id).then(() => { });
         } else {
-          supabase.from("game_progress").insert({ profile_id: profileId, game_mode: "prop-hunt", score: coins }).then(() => {});
+          supabase.from("game_progress").insert({ profile_id: profileId, game_mode: "prop-hunt", score: coins }).then(() => { });
         }
       });
-
-    stopListening();
-  }, [profileId, stopListening]);
+  }, [profileId]);
 
   // Sync activeZone to movementState
   useEffect(() => { movementState.activeZone = activeZone; }, [activeZone]);
@@ -292,11 +442,14 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
     };
   }, []);
 
+  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
   // Presence broadcast
   useEffect(() => {
     const channel = supabase.channel("world-presence", {
       config: { presence: { key: profileId } },
     });
+    presenceChannelRef.current = channel;
 
     channel
       .on("presence", { event: "sync" }, () => {
@@ -315,12 +468,16 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
         }
       });
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+      presenceChannelRef.current = null;
+    };
   }, [profileId, playerName]);
 
   const handlePositionChange = useCallback((x: number, z: number) => {
-    const channel = supabase.channel("world-presence");
-    channel.track({ x, z, name: playerName, current_zone: movementState.activeZone }).catch(() => {});
+    if (presenceChannelRef.current) {
+      presenceChannelRef.current.track({ x, z, name: playerName, current_zone: movementState.activeZone }).catch(() => { });
+    }
   }, [playerName]);
 
   const currentZone = currentZoneId ? ZONE_BUILDINGS.find(z => z.id === currentZoneId) : null;
@@ -344,67 +501,21 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
         ))}
       </Canvas>
 
-      <ZonePrompt
-        zoneName={currentZone?.label ?? ""}
-        zoneIcon={currentZone?.icon ?? ""}
-        visible={!!currentZone && !activeZone}
-        onEnter={() => currentZone && setActiveZone(currentZone.id)}
+      <GameHUD
+        sessionCoins={sessionCoins}
+        sessionXP={sessionXP}
+        rewardPopups={rewardPopups}
+        nearChest={nearChest}
+        isListening={isListening}
+        transcript={transcript}
+        isSupported={isSupported}
+        activeZone={activeZone}
+        currentZone={currentZone}
+        onEnterZone={() => currentZone && setActiveZone(currentZone.id)}
+        onToggleMic={isListening ? stopListening : startListening}
+        removePopup={removePopup}
+        onCloseZone={() => setActiveZone(null)}
       />
-
-      <ZoneOverlay
-        zoneId={activeZone}
-        zoneName={ZONE_BUILDINGS.find((z) => z.id === activeZone)?.label ?? ""}
-        onClose={() => setActiveZone(null)}
-      />
-
-      {/* Reward popups */}
-      <AnimatePresence>
-        {rewardPopups.map(p => (
-          <RewardPopup key={p.id} text={p.text} onDone={() => removePopup(p.id)} />
-        ))}
-      </AnimatePresence>
-
-      {/* Rewards HUD */}
-      {!activeZone && (
-        <div className="fixed right-4 top-4 z-30 rounded-xl border border-yellow-500/20 bg-black/70 px-4 py-2 font-fredoka text-sm text-white backdrop-blur">
-          <div className="flex items-center gap-3">
-            <span>🪙 {sessionCoins}</span>
-            <span>⭐ {sessionXP} XP</span>
-          </div>
-        </div>
-      )}
-
-      {/* Voice/mic HUD when near chest */}
-      {!activeZone && nearChest && isSupported && (
-        <div className="fixed bottom-24 left-1/2 z-30 -translate-x-1/2">
-          <button
-            onClick={isListening ? stopListening : startListening}
-            className={`flex items-center gap-2 rounded-full px-5 py-3 font-fredoka text-sm font-bold shadow-lg transition-all ${
-              isListening
-                ? "bg-red-500 text-white animate-pulse"
-                : "bg-yellow-500 text-black hover:bg-yellow-400"
-            }`}
-          >
-            {isListening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-            {isListening ? `Listening... ${transcript || ""}` : 'Hold V or Hold Tap — Shout "BREAK!"'}
-          </button>
-        </div>
-      )}
-
-      {/* Controls HUD */}
-      {!activeZone && (
-        <div className="fixed left-1/2 top-4 z-30 -translate-x-1/2 rounded-lg border border-white/10 bg-black/70 px-5 py-2 font-fredoka text-xs text-white shadow-lg backdrop-blur">
-          <span className="inline-flex items-center gap-2">
-            <kbd className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">WASD</kbd> Move
-            <span className="text-white/40">·</span>
-            <kbd className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">Click</kbd> Walk
-            <span className="text-white/40">·</span>
-            <kbd className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">Enter</kbd> Interact
-            <span className="text-white/40">·</span>
-            <kbd className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">V</kbd> 🎤 Voice
-          </span>
-        </div>
-      )}
     </div>
   );
 }
