@@ -14,6 +14,108 @@ export type Database = {
   }
   public: {
     Tables: {
+      eco_room_players: {
+        Row: {
+          disguise: string | null
+          id: string
+          is_alive: boolean
+          joined_at: string
+          profile_id: string
+          role: string
+          room_id: string
+          score: number
+          x: number
+          z: number
+        }
+        Insert: {
+          disguise?: string | null
+          id?: string
+          is_alive?: boolean
+          joined_at?: string
+          profile_id: string
+          role?: string
+          room_id: string
+          score?: number
+          x?: number
+          z?: number
+        }
+        Update: {
+          disguise?: string | null
+          id?: string
+          is_alive?: boolean
+          joined_at?: string
+          profile_id?: string
+          role?: string
+          room_id?: string
+          score?: number
+          x?: number
+          z?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "eco_room_players_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "eco_room_players_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "eco_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      eco_rooms: {
+        Row: {
+          code: string
+          created_at: string
+          host_profile_id: string
+          hunter_profile_id: string | null
+          id: string
+          round_timer_end: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          host_profile_id: string
+          hunter_profile_id?: string | null
+          id?: string
+          round_timer_end?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          host_profile_id?: string
+          hunter_profile_id?: string | null
+          id?: string
+          round_timer_end?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "eco_rooms_host_profile_id_fkey"
+            columns: ["host_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "eco_rooms_hunter_profile_id_fkey"
+            columns: ["hunter_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       game_progress: {
         Row: {
           best_time_ms: number | null
