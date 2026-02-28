@@ -11,6 +11,7 @@ import Obby from "./pages/Obby";
 import Npc from "./pages/Npc";
 import PropHunt from "./pages/PropHunt";
 import NotFound from "./pages/NotFound";
+import { MeritLedger } from "./components/MeritLedger";
 
 const queryClient = new QueryClient();
 
@@ -19,6 +20,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      <MeritLedger />
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />

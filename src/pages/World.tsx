@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { GameWorld3D } from "@/components/world/GameWorld3D";
 import { motion } from "framer-motion";
+import { meritStore } from "@/stores/useMeritStore";
 
 export default function World() {
   const [profile, setProfile] = useState<{ id: string; name: string }>({ id: "guest", name: "Explorer" });
@@ -16,7 +17,10 @@ export default function World() {
           .select("id, name")
           .eq("auth_id", session.user.id)
           .maybeSingle();
-        if (data) setProfile(data);
+        if (data) {
+          setProfile(data);
+          meritStore.loadFromProfile(data.id);
+        }
       }
       setLoading(false);
     }

@@ -95,6 +95,10 @@ export default {
           "0%, 100%": { transform: "rotate(-3deg)" },
           "50%": { transform: "rotate(3deg)" },
         },
+        "merit-glow": {
+          "0%, 100%": { boxShadow: "0 0 8px 2px hsl(var(--game-yellow) / 0.3)", transform: "scale(1)" },
+          "50%": { boxShadow: "0 0 20px 8px hsl(var(--game-yellow) / 0.6)", transform: "scale(1.08)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -102,6 +106,7 @@ export default {
         float: "float 3s ease-in-out infinite",
         glow: "glow 2s ease-in-out infinite",
         wiggle: "wiggle 1s ease-in-out infinite",
+        "merit-glow": "merit-glow 1.5s ease-in-out",
       },
     },
   },

@@ -6,6 +6,7 @@ import { TrashObject3D, TRASH_TYPES, type TrashType } from "./TrashObject3D";
 import { EcoHunterHUD } from "./EcoHunterHUD";
 import { supabase } from "@/integrations/supabase/client";
 import type { EcoRoom, EcoPlayer, PlayerRole } from "./useEcoRoom";
+import { meritStore } from "@/stores/useMeritStore";
 
 // Generate static trash layout from room id (deterministic)
 function generateTrashLayout(seed: string, count: number) {
@@ -305,6 +306,7 @@ export function EcoHunterArena({ room, players, profileId }: EcoHunterArenaProps
 
       const newScore = score + 50;
       setScore(newScore);
+      meritStore.addEcoVitality(5);
       await supabase.from("eco_room_players")
         .update({ score: newScore })
         .eq("profile_id", profileId)
@@ -314,6 +316,7 @@ export function EcoHunterArena({ room, players, profileId }: EcoHunterArenaProps
       setRecycledIds((prev) => new Set(prev).add(targetId));
       const newScore = score + 10;
       setScore(newScore);
+      meritStore.addEcoVitality(10);
       await supabase.from("eco_room_players")
         .update({ score: newScore })
         .eq("profile_id", profileId)

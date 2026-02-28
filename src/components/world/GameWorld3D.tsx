@@ -14,6 +14,7 @@ import { Bridge3D } from "./Bridge3D";
 import { ThoughtBubble } from "./ThoughtBubble";
 import { useDeepgramRecognition } from "@/hooks/useDeepgramRecognition";
 import { motion, AnimatePresence } from "framer-motion";
+import { meritStore } from "@/stores/useMeritStore";
 
 function AudioPulse({ isListening, volume, playerPos }: { isListening: boolean, volume: number, playerPos: THREE.Vector3 }) {
   const pulseRef = useRef<THREE.Mesh>(null);
@@ -419,6 +420,7 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
         if (clarity >= 0.1 || t.includes("bridge")) {
           lastTriggerTime.current = now;
           castBridge(nearBridgeNow);
+          meritStore.addMerit(2);
           setThoughtBubble({ icon: "✨", hint: "BRIDGE!", showTryAgain: false });
         } else {
           setThoughtBubble({ icon: "🌉", hint: "Bridge? Speak louder!", showTryAgain: true });
@@ -433,6 +435,7 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
         lastTriggerTime.current = now;
         if (clarity >= 0.1 || t.includes("open")) {
           window.dispatchEvent(new CustomEvent("chest-break", { detail: { id: chestProximityState.nearestChestId } }));
+          meritStore.addMerit(2);
           setThoughtBubble({ icon: "✨", hint: "OPEN!", showTryAgain: false });
         } else {
           setThoughtBubble({ icon: "🗝️", hint: "Open? Speak louder!", showTryAgain: true });
@@ -576,6 +579,7 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
     const coins = 10, xp = 25;
     setSessionCoins(c => c + coins);
     setSessionXP(x => x + xp);
+    meritStore.addEcoVitality(5);
     const id1 = ++popupCounter.current, id2 = ++popupCounter.current;
     setRewardPopups(prev => [...prev, { id: id1, text: `+${coins} 🪙 Coins` }, { id: id2, text: `+${xp} ⭐ XP` }]);
     supabase.from("game_progress").select("id,score").eq("profile_id", profileId).eq("game_mode", "prop-hunt").maybeSingle().then(({ data }) => {
