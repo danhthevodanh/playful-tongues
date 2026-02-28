@@ -1,1 +1,4 @@
 project_id = "gxvkjfqvvvegwkeegvxw"
+
+[functions.npc-chat]
+verify_jwt = false
