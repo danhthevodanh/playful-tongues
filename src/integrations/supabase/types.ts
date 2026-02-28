@@ -53,13 +53,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "eco_room_players_profile_id_fkey"
-            columns: ["profile_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "eco_room_players_room_id_fkey"
             columns: ["room_id"]
             isOneToOne: false
@@ -99,22 +92,7 @@ export type Database = {
           status?: string
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "eco_rooms_host_profile_id_fkey"
-            columns: ["host_profile_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "eco_rooms_hunter_profile_id_fkey"
-            columns: ["hunter_profile_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       game_progress: {
         Row: {
