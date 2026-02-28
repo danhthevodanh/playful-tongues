@@ -83,10 +83,10 @@ export function useEcoRoom() {
           // Refetch all players with names
           const { data } = await supabase
             .from("eco_room_players")
-            .select("*, profiles!eco_room_players_profile_id_fkey(name)")
+            .select("*")
             .eq("room_id", roomId);
           if (data) {
-            setPlayers(data.map((p: any) => ({ ...p, name: p.profiles?.name || "Player" })));
+            setPlayers(data.map((p: any) => ({ ...p, name: "Player" })));
           }
         }
       )
@@ -117,9 +117,9 @@ export function useEcoRoom() {
     // Fetch players
     const { data: pData } = await supabase
       .from("eco_room_players")
-      .select("*, profiles!eco_room_players_profile_id_fkey(name)")
+      .select("*")
       .eq("room_id", data.id);
-    if (pData) setPlayers(pData.map((p: any) => ({ ...p, name: p.profiles?.name || "Player" })));
+    if (pData) setPlayers(pData.map((p: any) => ({ ...p, name: "Player" })));
 
     setLoading(false);
   }, [profileId, subscribeToRoom]);
@@ -163,9 +163,9 @@ export function useEcoRoom() {
 
     const { data: pData } = await supabase
       .from("eco_room_players")
-      .select("*, profiles!eco_room_players_profile_id_fkey(name)")
+      .select("*")
       .eq("room_id", roomData.id);
-    if (pData) setPlayers(pData.map((p: any) => ({ ...p, name: p.profiles?.name || "Player" })));
+    if (pData) setPlayers(pData.map((p: any) => ({ ...p, name: "Player" })));
 
     setLoading(false);
   }, [profileId, subscribeToRoom]);
