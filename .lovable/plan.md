@@ -1,82 +1,99 @@
 
 
-# Eco Hunter — Multiplayer Cleanup Game
+# Merit Ledger -- Global Character Development System
 
-## Concept
+## Overview
 
-Replace `/prop-hunt` with a real-time multiplayer "Eco Hunter" game. Up to 16 players join a room. One random player becomes the **Hunter**; the rest become **Monsters** who disguise as trash objects polluting a 3D arena. The Hunter must find and destroy monsters by approaching them and voice-commanding **"Recycle!"**. Monsters try to blend in with real trash and survive until the timer runs out.
+Add two persistent global stats -- **Merit Points** (ethical growth inspired by Di Zi Gui / Liao Fan) and **Eco-Vitality** (SDG 13 environmental progress) -- tracked across all game activities. A floating **Merit Ledger** (So Cong Qua) book icon appears as a persistent UI element, glowing when points are earned. Values are saved to the database and loaded on login.
 
 ## Database Changes
 
-**New table: `eco_rooms`**
-- `id` (uuid, PK), `code` (text, unique 6-char room code), `host_profile_id` (uuid), `status` (text: waiting/playing/finished), `hunter_profile_id` (uuid, nullable), `round_timer_end` (timestamptz, nullable), `created_at`, `updated_at`
-- RLS: authenticated users can read all rooms, insert own, update if host
+Add two new columns to the existing `profiles` table:
 
-**New table: `eco_room_players`**
-- `id` (uuid, PK), `room_id` (uuid, FK to eco_rooms), `profile_id` (uuid), `role` (text: hunter/monster/spectator), `disguise` (text, nullable — trash type), `is_alive` (boolean, default true), `x`/`z` (float), `score` (int, default 0), `joined_at` (timestamptz)
-- RLS: authenticated can read players in their room, update own row
-- Enable realtime on both tables
-
-## Architecture
-
-```text
-┌──────────────────────────────────────────────┐
-│  /prop-hunt route (PropHunt.tsx)              │
-│                                              │
-│  ┌─────────────┐    ┌──────────────────────┐ │
-│  │ Lobby Screen │───▸│ EcoHunterGame (3D)   │ │
-│  │ - Create/Join│    │ - Arena map          │ │
-│  │ - Room code  │    │ - Player positions   │ │
-│  │ - Player list│    │ - Trash objects      │ │
-│  │ - Ready up   │    │ - Voice: "Recycle!"  │ │
-│  └─────────────┘    │ - Timer + scoreboard │ │
-│                      └──────────────────────┘ │
-└──────────────────────────────────────────────┘
+```sql
+ALTER TABLE profiles ADD COLUMN merit_points integer NOT NULL DEFAULT 0;
+ALTER TABLE profiles ADD COLUMN eco_vitality integer NOT NULL DEFAULT 0;
 ```
 
-## Implementation Steps
+No new tables needed. Existing RLS policies on `profiles` already allow users to read/update their own profile.
 
-### 1. Create database tables
-- `eco_rooms` and `eco_room_players` with RLS policies
-- Enable realtime on both tables
+## New Files
 
-### 2. Build Lobby UI (`src/pages/PropHunt.tsx`)
-- **Create Room**: generates 6-char code, inserts into `eco_rooms`, subscribes to realtime
-- **Join Room**: enter code, insert into `eco_room_players`
-- **Player list**: realtime sync showing who's in the room (max 16)
-- **Start button** (host only): randomly picks hunter, sets `status=playing`, assigns roles
+### 1. `src/stores/useMeritStore.ts` -- Global State (Zustand-like pattern with React context)
 
-### 3. Build 3D Arena (`src/components/eco-hunter/EcoHunterArena.tsx`)
-- Flat arena with scattered trash objects (bottles, cans, bags — simple box meshes with labels)
-- Reuse existing `PlayerCharacter3D` for all players
-- Monsters see a "Disguise" button to transform into a trash object (stop moving, become a static mesh)
-- Trash objects are a mix of real (static) and monster-disguised
+A lightweight global store using a shared singleton + `useSyncExternalStore`:
 
-### 4. Game loop & roles
-- **Hunter**: moves with WASD, approaches trash, holds V and says "Recycle!" to destroy. If it's a monster → +50 points, monster eliminated. If real trash → +10 points (cleanup). Wrong call on real object: -5 points
-- **Monsters**: move with WASD, press E to disguise as a nearby trash type. While disguised, they're frozen but look like trash. Can un-disguise to reposition. If caught → spectator mode
-- **Timer**: 90-second rounds synced via `round_timer_end` in the room row
+- **State**: `meritPoints`, `ecoVitality`, `profileId`, `loaded`, `glowing`
+- **Actions**: `addMerit(amount)`, `addEcoVitality(amount)`, `loadFromProfile(profileId)`, `saveToProfile()`
+- Auto-saves to the database on every point change (debounced ~2 seconds)
+- Sets `glowing = true` for 1.5s whenever points are added (drives the book glow animation)
+- Exports `useMeritStore()` hook and standalone `meritStore` for non-React contexts
 
-### 5. Real-time sync
-- Use Supabase Presence channel per room (`eco-room-{code}`) for player positions (same pattern as world presence)
-- Use postgres_changes on `eco_room_players` for role/alive status updates
-- Use postgres_changes on `eco_rooms` for game state transitions
+### 2. `src/components/MeritLedger.tsx` -- Floating 3D Golden Book UI
 
-### 6. Scoring & end screen
-- When timer ends or all monsters eliminated: set `status=finished`
-- Show leaderboard overlay with scores
-- "Play Again" button: host can restart (re-randomize hunter)
+A fixed-position floating UI component:
 
-### 7. Environment recovery visual
-- As Hunter recycles trash, the arena visually cleans up: grass gets greener, flowers appear, pollution particles fade — reinforcing the eco theme
+- Golden book emoji/icon (📖) in a circular container, bottom-left of screen
+- Shows current Merit Points and Eco-Vitality as small badges
+- **Glow effect**: golden pulse animation (CSS box-shadow + scale) triggered by `glowing` state
+- Click to expand a small panel showing:
+  - Merit Points with a virtue icon
+  - Eco-Vitality with a leaf icon
+  - Next milestone progress bar
+- Uses framer-motion for enter/exit animations
+- Renders on all pages (added to `App.tsx`)
 
-## Files to Create/Modify
+### 3. `src/lib/milestones.ts` -- Kindness Milestones Definition
 
-- **Modify**: `src/pages/PropHunt.tsx` — lobby + game container
-- **Create**: `src/components/eco-hunter/EcoHunterLobby.tsx` — room create/join UI
-- **Create**: `src/components/eco-hunter/EcoHunterArena.tsx` — 3D game arena
-- **Create**: `src/components/eco-hunter/EcoHunterHUD.tsx` — timer, scores, role indicator
-- **Create**: `src/components/eco-hunter/TrashObject3D.tsx` — 3D trash meshes
-- **Create**: `src/components/eco-hunter/useEcoRoom.ts` — hook for room state + realtime
-- **DB migration**: create `eco_rooms` and `eco_room_players` tables
+Defines milestone thresholds and labels:
+
+```text
+Merit:  10 = "First Kindness", 50 = "Virtuous Heart", 100 = "Di Zi Gui Scholar", ...
+Eco:    10 = "Seedling", 50 = "Green Guardian", 100 = "Climate Champion", ...
+```
+
+Exports a `checkMilestone(type, oldVal, newVal)` function that returns a milestone name if one was just crossed.
+
+## Modified Files
+
+### 4. `src/App.tsx` -- Add MeritLedger globally
+
+- Import and render `<MeritLedger />` alongside the existing Toasters, so it appears on every page.
+
+### 5. `src/pages/World.tsx` -- Initialize store on load
+
+- After loading the profile, call `meritStore.loadFromProfile(profileId)` to hydrate values from the database.
+
+### 6. `src/components/world/GameWorld3D.tsx` -- Award Eco-Vitality
+
+- In `handleChestBreak`: call `meritStore.addEcoVitality(5)` (recycling/cleanup action)
+- In `handleSpellResult` for bridge/open spells: call `meritStore.addMerit(2)` (voice interaction reward)
+- Check milestones and fire toast notifications using `sonner` toast
+
+### 7. `src/components/activities/PetActivity.tsx` -- Award Merit Points
+
+- In `handleSpeechResult`: call `meritStore.addMerit(wordCount)` (ethical voice interaction)
+- Check milestones and fire toast notification
+
+### 8. `src/components/eco-hunter/EcoHunterArena.tsx` -- Award Eco-Vitality
+
+- When hunter recycles trash: call `meritStore.addEcoVitality(10)`
+- When monster is caught: `meritStore.addEcoVitality(5)`
+
+## Toast Notifications for Milestones
+
+Use the existing `sonner` toast (already in App.tsx) to celebrate milestones:
+
+```
+toast("Kindness Milestone!", { description: "Virtuous Heart -- 50 Merit Points!" })
+```
+
+Triggered automatically by the store's `addMerit` / `addEcoVitality` when a threshold is crossed.
+
+## Technical Details
+
+- **No new dependencies** needed -- uses React's `useSyncExternalStore` for the global store pattern
+- **Debounced save**: accumulates changes and writes to the database every 2 seconds max to avoid excessive writes
+- **Glow animation**: CSS `@keyframes` with `box-shadow` gold glow + subtle scale pulse, toggled by store state
+- The Merit Ledger floats at `fixed bottom-4 left-4 z-50` so it never conflicts with game HUD elements (which are top-right and bottom-center)
 
