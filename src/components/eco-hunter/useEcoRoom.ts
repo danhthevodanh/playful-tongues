@@ -42,17 +42,24 @@ export function useEcoRoom() {
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
-  // Get current user's profile
+  // Get current user's profile, or generate anonymous ID for testing
   useEffect(() => {
     const getProfile = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("auth_id", user.id)
-        .single();
-      if (data) setProfileId(data.id);
+      if (user) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("auth_id", user.id)
+          .single();
+        if (data) { setProfileId(data.id); return; }
+      }
+      // Anonymous fallback for testing
+      const stored = sessionStorage.getItem("eco-anon-profile-id");
+      if (stored) { setProfileId(stored); return; }
+      const anonId = crypto.randomUUID();
+      sessionStorage.setItem("eco-anon-profile-id", anonId);
+      setProfileId(anonId);
     };
     getProfile();
   }, []);

@@ -24,15 +24,6 @@ export function EcoHunterLobby({
 }: EcoHunterLobbyProps) {
   const [joinCode, setJoinCode] = useState("");
 
-  if (!profileId) {
-    return (
-      <motion.div className="mt-20 flex flex-col items-center gap-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-        <span className="text-5xl">🔒</span>
-        <p className="font-fredoka text-lg text-muted-foreground">Please log in to play Eco Hunter!</p>
-      </motion.div>
-    );
-  }
-
   // No room yet — show create/join
   if (!room) {
     return (
