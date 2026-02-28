@@ -354,10 +354,10 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
 
   // ── Bridge spell ──────────────────────────────────────────────────────────
   const castBridge = useCallback((bridgeId: string) => {
-    const now = Date.now();
-    if (bridgeStates[bridgeId] === "forming" || bridgeStates[bridgeId] === "solid") return;
-    if (now - lastTriggerTime.current < 600) return;
-    lastTriggerTime.current = now;
+    if (bridgeStates[bridgeId] === "forming" || bridgeStates[bridgeId] === "solid") {
+      console.log("castBridge skipped — already", bridgeStates[bridgeId]);
+      return;
+    }
 
     console.log("Bridge forming:", bridgeId);
     setBridgeStates(prev => ({ ...prev, [bridgeId]: "forming" }));
@@ -523,8 +523,9 @@ export function GameWorld3D({ profileId, playerName }: { profileId: string; play
       setNearChest(!!chestProximityState.nearestChestId);
       const pX = movementState.pos.x;
       const pZ = movementState.pos.z;
-      const leftNear = pX < -22 && pX > -38 && Math.abs(pZ) < 8;
-      const rightNear = pX > 22 && pX < 38 && Math.abs(pZ) < 8;
+      // MUST match handleSpellResult ranges exactly so HUD button appears when casting is possible
+      const leftNear = pX < -10 && pX > -65 && Math.abs(pZ) < 10;
+      const rightNear = pX > 10 && pX < 65 && Math.abs(pZ) < 10;
       setNearBridgeId(leftNear ? "left-bridge" : rightNear ? "right-bridge" : null);
     }, 150);
     return () => clearInterval(interval);
