@@ -1,65 +1,82 @@
 
 
-# Fix Movement Glitching, Voice Duration, and Speech Detection
+# Eco Hunter — Multiplayer Cleanup Game
 
-## 3 Issues Found
+## Concept
 
-### Issue 1: Movement Glitching
-**Cause**: `ChestManager`'s `useFrame` calls `setNearestId(closest)` every single frame (60fps), triggering React re-renders constantly. This causes the entire component tree to re-render, which interferes with smooth movement rendering.
+Replace `/prop-hunt` with a real-time multiplayer "Eco Hunter" game. Up to 16 players join a room. One random player becomes the **Hunter**; the rest become **Monsters** who disguise as trash objects polluting a 3D arena. The Hunter must find and destroy monsters by approaching them and voice-commanding **"Recycle!"**. Monsters try to blend in with real trash and survive until the timer runs out.
 
-**Fix** (`ChestManager.tsx`): Only call `setNearestId` when the value actually changes. Compare against the ref before setting state.
+## Database Changes
 
-### Issue 2: "Listening" Turns Off Too Quickly
-**Cause**: `SpeechRecognition` is configured with `continuous = false` (line 32 of `useSpeechRecognition.ts`). The browser's speech recognition automatically stops after detecting a short pause in speech, often within 1-2 seconds. The `onend` callback fires and sets `isListening = false`, hiding the UI.
+**New table: `eco_rooms`**
+- `id` (uuid, PK), `code` (text, unique 6-char room code), `host_profile_id` (uuid), `status` (text: waiting/playing/finished), `hunter_profile_id` (uuid, nullable), `round_timer_end` (timestamptz, nullable), `created_at`, `updated_at`
+- RLS: authenticated users can read all rooms, insert own, update if host
 
-**Fix** (`useSpeechRecognition.ts`): 
-- Set `continuous = true` so recognition keeps listening
-- Add an auto-stop timeout (5 seconds) that starts when `startListening` is called
-- Clear the timeout if `stopListening` is called manually or on a successful result
+**New table: `eco_room_players`**
+- `id` (uuid, PK), `room_id` (uuid, FK to eco_rooms), `profile_id` (uuid), `role` (text: hunter/monster/spectator), `disguise` (text, nullable — trash type), `is_alive` (boolean, default true), `x`/`z` (float), `score` (int, default 0), `joined_at` (timestamptz)
+- RLS: authenticated can read players in their room, update own row
+- Enable realtime on both tables
 
-### Issue 3: Saying "Break" Does Nothing
-**Cause**: The `onResult` callback checks `chestProximityState.nearestChestId`, but the `chest-break` event handler in `ChestManager` has a stale `breakingId` closure (the effect depends on `[breakingId]`). Also, with `continuous = false`, recognition may end before processing the final transcript. Additionally, the interim results should also be checked for the "break" keyword, not just the final transcript.
+## Architecture
 
-**Fix**:
-- In `useSpeechRecognition.ts`: Also trigger `onResult` on interim transcripts that contain the keyword (or better, trigger the callback for both interim and final)
-- In `ChestManager.tsx`: Use a ref for `breakingId` too, so the event handler never has stale state
-- In `GameWorld3D.tsx`: Also check interim transcript in the `onResult` handler -- actually, better to add a separate `onInterim` callback or check transcript in the existing flow
-
-**Simplified approach**: Check for "break" in both interim and final results within the speech hook, and use a ref for `breakingId` in ChestManager.
-
-## Files to Edit
-
-### 1. `src/components/world/ChestManager.tsx`
-- Only call `setNearestId()` when value changes (fix movement glitch from constant re-renders)
-- Use a `breakingIdRef` alongside state so the event handler is never stale
-
-### 2. `src/hooks/useSpeechRecognition.ts`
-- Set `continuous = true`
-- Add a 5-second auto-stop timer started in `startListening`, cleared in `stopListening`
-- Fire `onResult` for interim transcripts too (so "break" is caught immediately, even before the browser finalizes)
-
-### 3. `src/components/world/GameWorld3D.tsx`
-- No structural changes needed -- the `onResult` callback already checks for "break". The fixes in the hook and manager will make it work.
-
-## Technical Details
-
-### ChestManager setState throttling
-```
-// In useFrame, only update React state when value changes:
-if (closest !== nearestIdRef.current) {
-  nearestIdRef.current = closest;
-  setNearestId(closest);
-}
-chestProximityState.nearestChestId = closest; // always update shared state
+```text
+┌──────────────────────────────────────────────┐
+│  /prop-hunt route (PropHunt.tsx)              │
+│                                              │
+│  ┌─────────────┐    ┌──────────────────────┐ │
+│  │ Lobby Screen │───▸│ EcoHunterGame (3D)   │ │
+│  │ - Create/Join│    │ - Arena map          │ │
+│  │ - Room code  │    │ - Player positions   │ │
+│  │ - Player list│    │ - Trash objects      │ │
+│  │ - Ready up   │    │ - Voice: "Recycle!"  │ │
+│  └─────────────┘    │ - Timer + scoreboard │ │
+│                      └──────────────────────┘ │
+└──────────────────────────────────────────────┘
 ```
 
-### Speech Recognition continuous + auto-timeout
-```
-recognition.continuous = true;  // keep listening
-// In startListening: set a 5s timeout that calls stopListening
-// In stopListening / onResult with "break": clear the timeout
-```
+## Implementation Steps
 
-### Interim transcript matching
-In the `onresult` handler, call `onResultRef.current` with interim text too, so "break" is caught the moment it's partially recognized -- not just after the browser finalizes. Use a flag or separate callback to differentiate.
+### 1. Create database tables
+- `eco_rooms` and `eco_room_players` with RLS policies
+- Enable realtime on both tables
+
+### 2. Build Lobby UI (`src/pages/PropHunt.tsx`)
+- **Create Room**: generates 6-char code, inserts into `eco_rooms`, subscribes to realtime
+- **Join Room**: enter code, insert into `eco_room_players`
+- **Player list**: realtime sync showing who's in the room (max 16)
+- **Start button** (host only): randomly picks hunter, sets `status=playing`, assigns roles
+
+### 3. Build 3D Arena (`src/components/eco-hunter/EcoHunterArena.tsx`)
+- Flat arena with scattered trash objects (bottles, cans, bags — simple box meshes with labels)
+- Reuse existing `PlayerCharacter3D` for all players
+- Monsters see a "Disguise" button to transform into a trash object (stop moving, become a static mesh)
+- Trash objects are a mix of real (static) and monster-disguised
+
+### 4. Game loop & roles
+- **Hunter**: moves with WASD, approaches trash, holds V and says "Recycle!" to destroy. If it's a monster → +50 points, monster eliminated. If real trash → +10 points (cleanup). Wrong call on real object: -5 points
+- **Monsters**: move with WASD, press E to disguise as a nearby trash type. While disguised, they're frozen but look like trash. Can un-disguise to reposition. If caught → spectator mode
+- **Timer**: 90-second rounds synced via `round_timer_end` in the room row
+
+### 5. Real-time sync
+- Use Supabase Presence channel per room (`eco-room-{code}`) for player positions (same pattern as world presence)
+- Use postgres_changes on `eco_room_players` for role/alive status updates
+- Use postgres_changes on `eco_rooms` for game state transitions
+
+### 6. Scoring & end screen
+- When timer ends or all monsters eliminated: set `status=finished`
+- Show leaderboard overlay with scores
+- "Play Again" button: host can restart (re-randomize hunter)
+
+### 7. Environment recovery visual
+- As Hunter recycles trash, the arena visually cleans up: grass gets greener, flowers appear, pollution particles fade — reinforcing the eco theme
+
+## Files to Create/Modify
+
+- **Modify**: `src/pages/PropHunt.tsx` — lobby + game container
+- **Create**: `src/components/eco-hunter/EcoHunterLobby.tsx` — room create/join UI
+- **Create**: `src/components/eco-hunter/EcoHunterArena.tsx` — 3D game arena
+- **Create**: `src/components/eco-hunter/EcoHunterHUD.tsx` — timer, scores, role indicator
+- **Create**: `src/components/eco-hunter/TrashObject3D.tsx` — 3D trash meshes
+- **Create**: `src/components/eco-hunter/useEcoRoom.ts` — hook for room state + realtime
+- **DB migration**: create `eco_rooms` and `eco_room_players` tables
 
