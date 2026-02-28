@@ -1,34 +1,105 @@
-import { useRef, useMemo } from "react";
+import { useRef } from "react";
+import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { Sky, Html, Grid } from "@react-three/drei";
+import { Sky, Html } from "@react-three/drei";
 
-const ZONE_BUILDINGS = [
-  { id: "npc", label: "NPC Hut", icon: "🧙‍♂️", color: "#e8913a", position: [-30, 0, -30] as [number, number, number] },
-  { id: "pet", label: "Pet Garden", icon: "🐾", color: "#7c4dcc", position: [-30, 0, 30] as [number, number, number] },
-  { id: "obby", label: "Obby Track", icon: "🏃", color: "#3dbf8f", position: [30, 0, 30] as [number, number, number] },
+// ─── Island definitions ────────────────────────────────────────────────────
+export const ISLANDS = [
+  { id: "spawn", center: [0, 0, 0] as [number, number, number], half: [25, 25] as [number, number] },
+  { id: "npc", center: [-70, 0, 0] as [number, number, number], half: [28, 28] as [number, number] },
+  { id: "chest", center: [70, 0, 0] as [number, number, number], half: [28, 28] as [number, number] },
 ];
 
-export { ZONE_BUILDINGS };
+// Bridge gap: spawn ends at x=±25, npc/chest start at x=±42 → ~17u gap, mid at ±33.5
+export const BRIDGE_DEFS = [
+  { id: "left-bridge", midX: -33.5, midZ: 0, length: 17 },
+  { id: "right-bridge", midX: 33.5, midZ: 0, length: 17 },
+];
 
+// Zone buildings positioned on their islands
+export const ZONE_BUILDINGS = [
+  { id: "npc", label: "NPC Hut", icon: "🧙‍♂️", color: "#e8913a", position: [-78, 0, -10] as [number, number, number] },
+  { id: "pet", label: "Pet Garden", icon: "🐾", color: "#7c4dcc", position: [-65, 0, 14] as [number, number, number] },
+  { id: "obby", label: "Chest Vault", icon: "🏆", color: "#3dbf8f", position: [70, 0, 0] as [number, number, number] },
+];
+
+// ─── Land collision helper (used by PlayerController) ─────────────────────
+export function isOnLand(x: number, z: number, bridges: Record<string, string>): boolean {
+  for (const island of ISLANDS) {
+    const [cx, , cz] = island.center;
+    if (Math.abs(x - cx) <= island.half[0] && Math.abs(z - cz) <= island.half[1]) return true;
+  }
+  for (const b of BRIDGE_DEFS) {
+    if (bridges[b.id] !== "solid") continue;
+    if (Math.abs(x - b.midX) <= b.length / 2 + 1 && Math.abs(z - b.midZ) <= 3) return true;
+  }
+  return false;
+}
+
+// ─── Ocean ─────────────────────────────────────────────────────────────────
+function Ocean() {
+  const matRef = useRef<THREE.MeshStandardMaterial>(null!);
+  useFrame(() => {
+    if (matRef.current) {
+      matRef.current.color.setHSL(0.57, 0.72, 0.33 + Math.sin(Date.now() * 0.0009) * 0.025);
+    }
+  });
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.25, 0]} receiveShadow>
+      <planeGeometry args={[600, 600]} />
+      <meshStandardMaterial ref={matRef} color="#1a6fa0" metalness={0.15} roughness={0.3} />
+    </mesh>
+  );
+}
+
+// ─── Island platform ───────────────────────────────────────────────────────
+function IslandPlatform({ island }: { island: typeof ISLANDS[0] }) {
+  const [cx, , cz] = island.center;
+  const [hx, hz] = island.half;
+  return (
+    <group position={[cx, 0, cz]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} receiveShadow>
+        <planeGeometry args={[hx * 2, hz * 2]} />
+        <meshStandardMaterial color="#4a9e3f" />
+      </mesh>
+      <mesh position={[0, -1.6, 0]}>
+        <boxGeometry args={[hx * 2, 3.2, hz * 2]} />
+        <meshStandardMaterial color="#8b5e3c" />
+      </mesh>
+    </group>
+  );
+}
+
+// ─── Bridge-gap sign ───────────────────────────────────────────────────────
+function BridgeEdgeSign({ x, z }: { x: number; z: number }) {
+  return (
+    <Html position={[x, 2.5, z]} center distanceFactor={38}>
+      <div className="pointer-events-none select-none text-center animate-bounce">
+        <div className="rounded-xl bg-indigo-950/90 px-3 py-1.5 border-2 border-yellow-400 shadow-xl">
+          <div className="text-xl">🌉</div>
+          <div className="font-fredoka text-xs font-bold text-yellow-200 whitespace-nowrap">Say "Bridge!"</div>
+        </div>
+      </div>
+    </Html>
+  );
+}
+
+// ─── Blocky building ───────────────────────────────────────────────────────
 function BlockyBuilding({ color, position, label, icon }: { color: string; position: [number, number, number]; label: string; icon: string }) {
   return (
     <group position={position}>
-      {/* Main building body */}
       <mesh position={[0, 4, 0]} castShadow receiveShadow>
         <boxGeometry args={[8, 8, 8]} />
         <meshStandardMaterial color={color} />
       </mesh>
-      {/* Roof */}
       <mesh position={[0, 9, 0]} castShadow>
         <boxGeometry args={[10, 2, 10]} />
         <meshStandardMaterial color={new THREE.Color(color).multiplyScalar(0.7)} />
       </mesh>
-      {/* Door */}
       <mesh position={[0, 1.5, 4.01]}>
         <boxGeometry args={[2, 3, 0.1]} />
         <meshStandardMaterial color="#5a3a1a" />
       </mesh>
-      {/* Windows */}
       <mesh position={[-2, 5, 4.01]}>
         <boxGeometry args={[1.5, 1.5, 0.1]} />
         <meshStandardMaterial color="#a8d8ea" />
@@ -37,8 +108,7 @@ function BlockyBuilding({ color, position, label, icon }: { color: string; posit
         <boxGeometry args={[1.5, 1.5, 0.1]} />
         <meshStandardMaterial color="#a8d8ea" />
       </mesh>
-      {/* Label */}
-      <Html position={[0, 12, 0]} center distanceFactor={40}>
+      <Html position={[0, 13, 0]} center distanceFactor={40}>
         <div className="pointer-events-none select-none whitespace-nowrap rounded-lg bg-black/70 px-3 py-1 backdrop-blur-sm">
           <span className="text-lg">{icon}</span>
           <span className="ml-1 font-fredoka text-sm font-bold text-white">{label}</span>
@@ -48,15 +118,14 @@ function BlockyBuilding({ color, position, label, icon }: { color: string; posit
   );
 }
 
+// ─── Tree ──────────────────────────────────────────────────────────────────
 function BlockyTree({ position }: { position: [number, number, number] }) {
   return (
     <group position={position}>
-      {/* Trunk */}
       <mesh position={[0, 2, 0]} castShadow>
         <cylinderGeometry args={[0.4, 0.5, 4, 6]} />
         <meshStandardMaterial color="#5a3a1a" />
       </mesh>
-      {/* Leaves - stacked boxes */}
       <mesh position={[0, 5, 0]} castShadow>
         <boxGeometry args={[4, 3, 4]} />
         <meshStandardMaterial color="#2d8a4e" />
@@ -73,6 +142,7 @@ function BlockyTree({ position }: { position: [number, number, number] }) {
   );
 }
 
+// ─── Spawn pad ─────────────────────────────────────────────────────────────
 function SpawnPad() {
   return (
     <group position={[0, 0.05, 0]}>
@@ -81,87 +151,55 @@ function SpawnPad() {
         <meshStandardMaterial color="#f5c842" emissive="#f5c842" emissiveIntensity={0.3} />
       </mesh>
       <Html position={[0, 0.5, 0]} center distanceFactor={30}>
-        <div className="pointer-events-none select-none font-fredoka text-xs font-bold text-white drop-shadow-md">
-          ⭐ SPAWN
-        </div>
+        <div className="pointer-events-none select-none font-fredoka text-xs font-bold text-white drop-shadow-md">⭐ SPAWN</div>
       </Html>
     </group>
   );
 }
 
-function DirtPath({ from, to }: { from: [number, number, number]; to: [number, number, number] }) {
-  const midX = (from[0] + to[0]) / 2;
-  const midZ = (from[2] + to[2]) / 2;
-  const dx = to[0] - from[0];
-  const dz = to[2] - from[2];
-  const length = Math.sqrt(dx * dx + dz * dz);
-  const angle = Math.atan2(dx, dz);
-
-  return (
-    <mesh position={[midX, 0.02, midZ]} rotation={[-Math.PI / 2, 0, angle]}>
-      <planeGeometry args={[2.5, length]} />
-      <meshStandardMaterial color="#a0764a" />
-    </mesh>
-  );
-}
-
-const TREE_POSITIONS: [number, number, number][] = [
-  [-15, 0, -10], [10, 0, -20], [-20, 0, 15], [20, 0, 10],
-  [-45, 0, -45], [45, 0, -45], [-45, 0, 45], [45, 0, 45],
-  [-50, 0, 0], [50, 0, 0], [0, 0, -50], [0, 0, 50],
-  [-60, 0, -20], [60, 0, 20], [-25, 0, -60], [25, 0, 60],
-  [-70, 0, 30], [70, 0, -30], [-10, 0, 70], [10, 0, -70],
-  [-80, 0, -80], [80, 0, 80], [-80, 0, 80], [80, 0, -80],
+// ─── Tree positions per island ─────────────────────────────────────────────
+const TREES: [number, number, number][] = [
+  // Spawn
+  [-18, 0, -18], [16, 0, -20], [-20, 0, 16], [18, 0, 18],
+  // NPC island
+  [-80, 0, -20], [-60, 0, -24], [-85, 0, 6], [-58, 0, 20],
+  // Chest island
+  [80, 0, -20], [58, 0, -24], [85, 0, 6], [60, 0, 20],
 ];
 
+// ─── WorldMap3D ────────────────────────────────────────────────────────────
 export function WorldMap3D() {
   return (
     <>
-      {/* Lighting */}
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[50, 80, 50]} intensity={1} castShadow shadow-mapSize={1024} />
+      <ambientLight intensity={0.55} />
+      <directionalLight position={[60, 80, 40]} intensity={1.2} castShadow shadow-mapSize={1024} />
+      <Sky sunPosition={[100, 45, 100]} turbidity={1.5} rayleigh={0.4} />
 
-      {/* Sky */}
-      <Sky sunPosition={[100, 60, 100]} turbidity={2} rayleigh={0.5} />
+      <Ocean />
 
-      {/* Ground */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-        <planeGeometry args={[200, 200]} />
-        <meshStandardMaterial color="#4a9e3f" />
-      </mesh>
+      {ISLANDS.map((island) => <IslandPlatform key={island.id} island={island} />)}
 
-      {/* Grid overlay */}
-      <Grid
-        position={[0, 0.01, 0]}
-        args={[200, 200]}
-        cellSize={2}
-        cellThickness={0.5}
-        cellColor="#3d8a35"
-        sectionSize={10}
-        sectionThickness={1}
-        sectionColor="#357a2e"
-        fadeDistance={100}
-        fadeStrength={1}
-        infiniteGrid={false}
-      />
+      {/* Bridge-edge signs near the water gaps */}
+      <BridgeEdgeSign x={-27} z={0} />
+      <BridgeEdgeSign x={27} z={0} />
 
-      {/* Spawn pad */}
       <SpawnPad />
 
-      {/* Dirt paths from spawn to each zone */}
-      {ZONE_BUILDINGS.map((z) => (
-        <DirtPath key={z.id} from={[0, 0, 0]} to={z.position} />
-      ))}
-
-      {/* Zone buildings */}
       {ZONE_BUILDINGS.map((z) => (
         <BlockyBuilding key={z.id} color={z.color} position={z.position} label={z.label} icon={z.icon} />
       ))}
 
-      {/* Trees */}
-      {TREE_POSITIONS.map((pos, i) => (
-        <BlockyTree key={i} position={pos} />
-      ))}
+      {TREES.map((pos, i) => <BlockyTree key={i} position={pos} />)}
+
+      {/* Activation Zones (Magic Pads) */}
+      <mesh position={[-37.5, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[45, 12]} />
+        <meshBasicMaterial color="#60a5fa" transparent opacity={0.15} />
+      </mesh>
+      <mesh position={[37.5, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[45, 12]} />
+        <meshBasicMaterial color="#60a5fa" transparent opacity={0.15} />
+      </mesh>
     </>
   );
 }

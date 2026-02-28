@@ -13,31 +13,42 @@ export const chestProximityState = {
   nearestChestId: null as string | null,
 };
 
+// Chest island center [70, 0, 0], half [28, 28]
+const CHEST_ISLAND_CX = 70;
+const CHEST_ISLAND_CZ = 0;
+const CHEST_ISLAND_HALF = 22; // slightly inside edges
+
 function generateChestPositions(count: number): ChestData[] {
   const chests: ChestData[] = [];
   const buildingPositions = ZONE_BUILDINGS.map(z => z.position);
   let attempts = 0;
 
-  while (chests.length < count && attempts < 200) {
+  while (chests.length < count && attempts < 300) {
     attempts++;
-    const x = (Math.random() - 0.5) * 140; // -70 to 70
-    const z = (Math.random() - 0.5) * 140;
+    const x = CHEST_ISLAND_CX + (Math.random() - 0.5) * CHEST_ISLAND_HALF * 2;
+    const z = CHEST_ISLAND_CZ + (Math.random() - 0.5) * CHEST_ISLAND_HALF * 2;
 
-    // Avoid spawn area
-    if (Math.sqrt(x * x + z * z) < 10) continue;
+    // Must be within island bounds
+    if (Math.abs(x - CHEST_ISLAND_CX) > CHEST_ISLAND_HALF) continue;
+    if (Math.abs(z - CHEST_ISLAND_CZ) > CHEST_ISLAND_HALF) continue;
 
     // Avoid buildings
-    const tooCloseToBuilding = buildingPositions.some(bp => {
+    const tooClose = buildingPositions.some(bp => {
       const dx = x - bp[0];
       const dz = z - bp[2];
-      return Math.sqrt(dx * dx + dz * dz) < 15;
+      return Math.sqrt(dx * dx + dz * dz) < 12;
     });
-    if (tooCloseToBuilding) continue;
+    if (tooClose) continue;
 
-    chests.push({
-      id: `chest-${Date.now()}-${chests.length}`,
-      position: [x, 0, z],
+    // Avoid other chests
+    const tooCloseToChest = chests.some(c => {
+      const dx = x - c.position[0];
+      const dz = z - c.position[2];
+      return Math.sqrt(dx * dx + dz * dz) < 8;
     });
+    if (tooCloseToChest) continue;
+
+    chests.push({ id: `chest-${Date.now()}-${chests.length}`, position: [x, 0, z] });
   }
 
   return chests;
