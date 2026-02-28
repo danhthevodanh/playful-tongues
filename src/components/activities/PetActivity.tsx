@@ -5,6 +5,7 @@ import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { usePetTTS } from "@/hooks/usePetTTS";
 import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { meritStore } from "@/stores/useMeritStore";
 
 const EVOLUTION_THRESHOLDS = [0, 10, 30, 60, 100];
 
@@ -53,6 +54,7 @@ export function PetActivity() {
       fetchPetReply(transcript, newTotal);
       return newTotal;
     });
+    meritStore.addMerit(wordCount);
   }, [fetchPetReply]);
 
   const { isListening, transcript, isSupported, startListening, stopListening } = useSpeechRecognition({

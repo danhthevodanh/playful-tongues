@@ -247,8 +247,10 @@ export type Database = {
           auth_id: string | null
           avatar_url: string | null
           created_at: string
+          eco_vitality: number
           id: string
           is_parent: boolean
+          merit_points: number
           name: string
           native_language: string | null
           parent_id: string | null
@@ -258,8 +260,10 @@ export type Database = {
           auth_id?: string | null
           avatar_url?: string | null
           created_at?: string
+          eco_vitality?: number
           id?: string
           is_parent?: boolean
+          merit_points?: number
           name: string
           native_language?: string | null
           parent_id?: string | null
@@ -269,8 +273,10 @@ export type Database = {
           auth_id?: string | null
           avatar_url?: string | null
           created_at?: string
+          eco_vitality?: number
           id?: string
           is_parent?: boolean
+          merit_points?: number
           name?: string
           native_language?: string | null
           parent_id?: string | null
